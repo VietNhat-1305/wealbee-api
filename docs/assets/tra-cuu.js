@@ -1,0 +1,158 @@
+// Web tra cứu BCTC (cùng 1 mã nguồn cho 2 web, khác gói API): CAU_HINH = {goi:'free'|'dn', ma_hoa:bool}
+const CH = window.CAU_HINH;
+const DUOI = CH.ma_hoa ? '.enc' : '';
+const NHAN = {revenue: 'Doanh thu', gross_profit: 'Lợi nhuận gộp', net_profit: 'Lợi nhuận sau thuế', cost_of_sales: 'Giá vốn',
+  operating_profit: 'Lợi nhuận hoạt động', profit_before_tax: 'Lợi nhuận trước thuế', total_assets: 'Tổng tài sản',
+  total_liabilities: 'Nợ phải trả', equity: 'Vốn chủ sở hữu', owners_equity: 'Vốn chủ sở hữu', cash: 'Tiền', cash_and_equivalents: 'Tiền và tương đương tiền',
+  inventories: 'Hàng tồn kho', receivables: 'Phải thu', operating_cash_flow: 'LCTT hoạt động kinh doanh', investing_cash_flow: 'LCTT đầu tư',
+  financing_cash_flow: 'LCTT tài chính', net_interest_income: 'Thu nhập lãi thuần', operating_expenses: 'Chi phí hoạt động',
+  net_profit_parent: 'LNST của cổ đông công ty mẹ', eps: 'EPS', short_term_debt: 'Vay ngắn hạn', long_term_debt: 'Vay dài hạn'};
+const NGANH = {corporate: 'Doanh nghiệp', bank: 'Ngân hàng', securities: 'Chứng khoán', insurance: 'Bảo hiểm'};
+const nhanKhoa = k => NHAN[k] || k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+let D = {idx: null, cty: {}, mk: null, ma: {}, chon: null, loc: '', nganh: ''};
+
+async function tai(ten) {
+  const r = await fetch(`data/${ten}.json${DUOI}`, {cache: 'no-store'});
+  if (!r.ok) return null;
+  const j = await r.json();
+  return CH.ma_hoa ? moGoi(j, D.mk) : j;
+}
+const gt = m => m == null ? null : typeof m === 'number' ? m : typeof m === 'object' ?
+  (m.quarter ?? m.end ?? m.value ?? m.ytd ?? m.cumulative ?? Object.values(m).find(v => typeof v === 'number') ?? null) : null;
+const ssanh = m => (m && typeof m === 'object') ? (Object.entries(m).find(([k, v]) => typeof v === 'number' && /prior|last_year|previous|same_quarter|start/.test(k)) || [])[1] ?? null : null;
+const diem = st => Object.entries(st || {}).find(([k, v]) => /score|health/.test(k) && (typeof v === 'number' || (v && typeof v === 'object')))?.[1];
+
+async function main() {
+  const khung = $('#app');
+  const tt = await fetch('data/trang_thai.json', {cache: 'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (CH.ma_hoa) {
+    const r = await fetch('data/index.json.enc', {cache: 'no-store'});
+    if (!r.ok) return chuaCo(khung, tt);
+    const g = await congMatKhau('data/index.json.enc', khung, 'Tra cứu BCTC · Gói Free');
+    D.mk = g.mk; D.idx = g.du_lieu;
+  } else {
+    D.idx = await tai('index');
+    if (!D.idx) return chuaCo(khung, tt);
+  }
+  const ct = await tai('cong_ty').catch(() => null);
+  for (const c of (ct?.ds || [])) D.cty[c.ticker || c.code || c.symbol] = c;
+  D.tt = tt;
+  ve();
+  window.onhashchange = () => chonMa(location.hash.slice(1));
+  if (location.hash.length > 1) chonMa(location.hash.slice(1));
+}
+
+function chuaCo(khung, tt) {
+  khung.innerHTML = `<div class="card empty"><h2>Chưa có dữ liệu</h2><div>Hệ thống đang chờ khoá API ${CH.goi === 'dn' ? 'gói Doanh nghiệp' : 'gói Free'}
+    hoặc đang đồng bộ lần đầu (mỗi giờ lấy thêm một phần).</div>${tt ? `<div class="sm mut2" style="margin-top:8px">Kiểm lần cuối: ${tg(tt.lan_kiem)}</div>` : ''}</div>`;
+}
+
+function quyenHtml(q) {
+  if (!q) return '';
+  const o = [];
+  if (q.name) o.push(`Gói <b>${esc(q.name)}</b>`);
+  if (q.rate_limit_per_minute) o.push(`${so(q.rate_limit_per_minute)} request/phút`);
+  if (q.delay_minutes != null) o.push(q.delay_minutes ? `trễ ${q.delay_minutes} phút` : 'thời gian thực');
+  if (q.include_score != null) o.push(q.include_score ? 'có điểm sức khoẻ' : 'không có điểm sức khoẻ');
+  const hien = Object.entries(q).find(([k]) => /display/.test(k));
+  if (hien) o.push(hien[1] ? 'được hiển thị cho khách' : 'chỉ dùng nội bộ');
+  return o.join(' · ');
+}
+
+function ve() {
+  const k = $('#app'), ds = Object.entries(D.idx.cong_ty || {});
+  const nganh = [...new Set(ds.map(([, v]) => v.nganh).filter(Boolean))];
+  k.innerHTML = `<div class="grid g4" style="margin-bottom:16px">
+      <div class="card kpi"><div class="l">Số mã có dữ liệu</div><div class="v">${so(ds.length)}</div></div>
+      <div class="card kpi"><div class="l">Dữ liệu đổi lần cuối</div><div class="v" style="font-size:17px">${tg(D.idx.cap_nhat)}</div></div>
+      <div class="card kpi"><div class="l">Kiểm cập nhật lần cuối</div><div class="v" style="font-size:17px">${tg(D.tt?.lan_kiem)}</div></div>
+      <div class="card kpi"><div class="l">Quyền của gói (từ /v1/me)</div><div class="sm" style="margin-top:4px">${quyenHtml(D.idx.quyen) || '—'}</div></div></div>
+    ${D.tt?.dang_dong_bo_lan_dau ? '<div class="card sm" style="margin-bottom:16px">⏳ Đang đồng bộ lần đầu: mỗi giờ lấy thêm một phần, danh sách sẽ dần đầy đủ.</div>' : ''}
+    <div class="split"><div class="card"><div class="grid" style="grid-template-columns:1fr auto;gap:10px;margin-bottom:12px">
+        <input class="search" id="q" placeholder="Tìm mã hoặc tên công ty (gõ không dấu được)" value="${esc(D.loc)}">
+        <select id="ng"><option value="">Mọi ngành</option>${nganh.map(n => `<option value="${esc(n)}" ${D.nganh === n ? 'selected' : ''}>${esc(NGANH[n] || n)}</option>`).join('')}</select></div>
+      <div class="list" id="ds"></div></div>
+      <div id="ct">${D.chon ? '' : '<div class="card empty">Chọn một mã bên trái để xem báo cáo tài chính, biểu đồ giá và nguồn gốc số liệu.</div>'}</div></div>`;
+  $('#q').oninput = e => { D.loc = e.target.value; veDs(); };
+  $('#ng').onchange = e => { D.nganh = e.target.value; veDs(); };
+  veDs();
+  if (D.chon) veCt(D.chon);
+}
+
+function veDs() {
+  const q = khoBo(D.loc.trim());
+  const ds = Object.entries(D.idx.cong_ty || {}).filter(([m, v]) => (!D.nganh || v.nganh === D.nganh) &&
+    (!q || khoBo(m + ' ' + (D.cty[m]?.name || '')).includes(q))).sort((a, b) => a[0].localeCompare(b[0]));
+  const co = ds.some(([, v]) => Object.keys(v).some(k => /score/.test(k)));
+  $('#ds').innerHTML = ds.length ? `<table><tr><th>Mã</th><th>Kỳ</th><th class="n">Doanh thu<br><span class="xs">tỷ đồng</span></th><th class="n">LNST<br><span class="xs">tỷ đồng</span></th>${co ? '<th class="n">Điểm</th>' : ''}<th></th></tr>
+    ${ds.slice(0, 800).map(([m, v]) => `<tr class="row" onclick="location.hash='${m}'"><td><b>${m}</b><div class="xs mut2">${esc((D.cty[m]?.name || '').slice(0, 34))}</div></td>
+      <td class="sm">${esc(v.ky)}</td><td class="n">${so(v.dt / 1e9)}</td><td class="n ${v.ln < 0 ? 'down' : ''}">${so(v.ln / 1e9)}</td>
+      ${co ? `<td class="n">${so(Object.entries(v).find(([k]) => /score/.test(k))?.[1], 1)}</td>` : ''}<td><span class="tag ${esc(v.tt)}">${esc(v.tt === 'verified' ? '✓' : v.tt === 'needs_review' ? 'soát' : v.tt || '')}</span></td></tr>`).join('')}</table>`
+    : '<div class="empty">Không có mã khớp.</div>';
+}
+
+async function chonMa(m) {
+  m = (m || '').toUpperCase();
+  if (!m || !D.idx.cong_ty[m]) return;
+  D.chon = m;
+  $('#ct').innerHTML = '<div class="card empty">Đang tải…</div>';
+  if (!D.ma[m]) D.ma[m] = await tai(`ma/${m}`);
+  veCt(m);
+  if (innerWidth < 900) $('#ct').scrollIntoView({behavior: 'smooth'});
+}
+
+function bangChiTieu(ten, bang) {
+  if (!bang || typeof bang !== 'object') return '';
+  const dong = Object.entries(bang).filter(([, v]) => gt(v) != null);
+  if (!dong.length) return '';
+  return `<div class="card"><h3>${ten}</h3><table><tr><th>Chỉ tiêu</th><th class="n">Kỳ này</th><th class="n">So sánh</th><th class="n">±</th></tr>
+    ${dong.map(([k, v]) => { const a = gt(v), b = ssanh(v), d = pct(a, b);
+      return `<tr><td class="sm">${esc(nhanKhoa(k))}</td><td class="n">${ty(a)}</td><td class="n mut">${ty(b)}</td>
+        <td class="n ${d == null ? '' : d >= 0 ? 'up' : 'down'}">${d == null ? '' : (d >= 0 ? '+' : '') + so(d, 1) + '%'}</td></tr>`; }).join('')}</table></div>`;
+}
+
+function veCt(m) {
+  const du = D.ma[m]; if (!du) return;
+  const kys = Object.keys(du.ky).sort(), st = du.ky[kys[kys.length - 1]], c = D.cty[m] || {};
+  const inc = st.income_statement || {}, bs = st.balance_sheet || {}, cf = st.cash_flow || {};
+  const dt = gt(inc.revenue), ln = gt(inc.net_profit), dtS = ssanh(inc.revenue), lnS = ssanh(inc.net_profit), sk = diem(st);
+  const ng = st.nguon_goc || {};
+  const kpi = (l, v, s) => { const d = pct(v, s); return `<div class="card kpi"><div class="l">${l}</div><div class="v">${ty(v)}</div>
+    ${d == null ? '' : `<div class="sm ${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${so(Math.abs(d), 1)}% so cùng kỳ</div>`}</div>`; };
+  $('#ct').innerHTML = `<div class="grid">
+    <div class="card"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px">
+      <h1>${m}</h1><div class="mut">${esc(c.name || '')}</div>
+      <div class="sm mut2">${esc(c.exchange || '')} · ${esc(NGANH[st.industry_type] || st.industry_type || '')} · Kỳ ${esc(kys[kys.length - 1])} · ${esc(st.scope || '')}</div></div>
+      <div style="text-align:right"><span class="tag ${esc(st.status)}">${esc(st.status || '')}</span>
+      <div class="sm mut" style="margin-top:6px">Phép kiểm: <b>${st.kiem?.dat ?? '—'}/${st.kiem?.tong ?? '—'}</b> đạt${st.kiem?.loi?.length ? ` · lỗi: ${esc(st.kiem.loi.join(', '))}` : ''}</div>
+      ${sk != null ? `<div class="sm" style="margin-top:4px">Điểm sức khoẻ: <b>${esc(typeof sk === 'object' ? JSON.stringify(sk) : so(sk, 1))}</b>/10</div>` :
+        `<div class="xs mut2" style="margin-top:4px">${CH.goi === 'free' ? 'Gói Free không có điểm sức khoẻ' : 'Chưa có điểm sức khoẻ'}</div>`}</div></div></div>
+    <div class="grid g4">${kpi('Doanh thu quý', dt, dtS)}${kpi('LNST quý', ln, lnS)}${kpi('Tổng tài sản', gt(bs.total_assets), ssanh(bs.total_assets))}</div>
+    <div class="card"><h3>Giá cổ phiếu 12 tháng · nguồn VNDirect (API miễn phí)</h3><div id="gia" class="empty sm">Đang tải giá…</div></div>
+    <div class="card"><h3>Doanh thu và lợi nhuận theo quý</h3>${bieuDoCot(kys, [
+      {ten: 'Doanh thu', mau: '#4f8cff', gt: kys.map(k => gt((du.ky[k].income_statement || {}).revenue))},
+      {ten: 'LNST', mau: '#22c55e', gt: kys.map(k => gt((du.ky[k].income_statement || {}).net_profit))}])}</div>
+    ${bangChiTieu('Kết quả kinh doanh (quý)', inc)}${bangChiTieu('Cân đối kế toán (cuối kỳ so với đầu năm)', bs)}${bangChiTieu('Lưu chuyển tiền tệ (luỹ kế)', cf)}
+    <div class="card sm"><h3>Nguồn gốc số liệu</h3>
+      ${ng.document_url ? `<div>File gốc: <a href="${esc(ng.document_url)}" target="_blank" rel="noopener">${esc(ng.document_url.slice(0, 80))}</a></div>` : ''}
+      ${ng.pages ? `<div class="mut">Trang: ${esc(Object.entries(ng.pages).map(([k, v]) => `${nhanKhoa(k)} tr.${v}`).join(' · '))}</div>` : ''}
+      ${Object.entries(ng).filter(([k]) => k.endsWith('_at')).map(([k, v]) => `<div class="mut">${esc(k === 'detected_at' ? 'Wealbee thấy file' : k)}: ${tg(v)}</div>`).join('')}
+      ${st.review_reasons?.length ? `<div style="color:var(--warn)">Cần soát: ${esc(st.review_reasons.join('; '))}</div>` : ''}</div></div>`;
+  veGia(m);
+}
+
+async function veGia(m) {
+  const to = Math.floor(Date.now() / 1000), fr = to - 366 * 86400;
+  try {
+    const j = await (await fetch(`https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol=${m}&from=${fr}&to=${to}`)).json();
+    if (!j.t?.length) throw 0;
+    const k = Math.max(...j.c) < 1000 ? 1000 : 1, c = j.c.map(v => v * k), dau = c[0], cuoi = c[c.length - 1], d = pct(cuoi, dau);
+    if (D.chon !== m) return;
+    $('#gia').className = '';
+    $('#gia').innerHTML = `<div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><div class="big">${so(cuoi)}</div>
+      <div class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${so(Math.abs(d), 1)}% trong 12 tháng</div><div class="sm mut2">đồng · phiên ${new Date(j.t[j.t.length - 1] * 1000).toLocaleDateString('vi-VN')}</div></div>
+      ${bieuDoDuong([{ten: m, mau: '#7c5cff', diem: j.t.map((t, i) => [t * 1000, c[i] / 1000])}], {donVi: 'k'})}`;
+  } catch { if (D.chon === m) $('#gia').innerHTML = 'Không lấy được giá từ VNDirect.'; }
+}
+
+main();

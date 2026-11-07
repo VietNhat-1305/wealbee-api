@@ -1,0 +1,21 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wealbee API · Free và Doanh nghiệp</title><meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css"></head><body>
+<header class="top"><div class="wrap"><a class="brand" href="./"><i>W</i>Wealbee Data API</a><div class="sp"></div><span class="pill" id="hl">Đang kiểm API…</span></div></header>
+<main class="wrap"><section class="hero"><h1>Tra cứu báo cáo tài chính<br>trên 2 gói API Wealbee</h1>
+<p class="mut">Hai web cùng tính năng, cùng mã nguồn, chỉ khác gói API: một web dùng khoá gói Free, một web dùng khoá gói Doanh nghiệp, để so sánh trực tiếp.
+Số liệu BCTC từ Wealbee Data API, giá cổ phiếu từ API công khai miễn phí của VNDirect. Hiệu suất API được quét tự động mỗi giờ.</p></section>
+<div class="grid g3">
+<a class="card" href="free/" style="color:inherit;text-decoration:none"><span class="pill free">Gói Free · nội bộ</span><h2 style="margin-top:12px">Web bản Free</h2>
+<div class="mut sm">30 request/phút, dữ liệu BCTC HOSE/HNX. Theo điều khoản gói Free chỉ dùng nội bộ nên web cần mật khẩu.</div></a>
+<a class="card" href="doanh-nghiep/" style="color:inherit;text-decoration:none"><span class="pill dn">Gói Doanh nghiệp</span><h2 style="margin-top:12px">Web bản Doanh nghiệp</h2>
+<div class="mut sm">Giới hạn theo hợp đồng, có điểm sức khoẻ tài chính, được phép hiển thị cho khách hàng.</div></a>
+<a class="card" href="bao-cao/" style="color:inherit;text-decoration:none"><span class="pill">Nội bộ</span><h2 style="margin-top:12px">Báo cáo hiệu suất API</h2>
+<div class="mut sm">Tính sẵn sàng, độ trễ, lỗi, giới hạn tốc độ, độ tươi và chất lượng dữ liệu, bảo mật; so sánh 2 gói.</div></a></div></main>
+<footer class="wrap">Dự án thử nghiệm đánh giá Wealbee Data API.</footer>
+<script>
+fetch('https://data.wealbee.com/v1/health').then(r => r.json()).then(j => { const e = document.getElementById('hl');
+  e.textContent = j.status === 'ok' ? '● API đang hoạt động' : 'API báo lỗi'; e.className = 'pill ' + (j.status === 'ok' ? 'ok' : 'bad'); })
+  .catch(() => { const e = document.getElementById('hl'); e.textContent = 'Trạng thái: xem báo cáo'; });
+</script></body></html>

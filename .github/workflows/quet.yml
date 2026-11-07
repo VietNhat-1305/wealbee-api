@@ -1,0 +1,36 @@
+name: Quet hieu suat Wealbee API
+on:
+  schedule:
+    - cron: "7 * * * *"        # mỗi giờ, phút thứ 7 (GitHub có thể trễ vài phút)
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: quet-wealbee
+  cancel-in-progress: false
+jobs:
+  quet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Quet + dong bo du lieu 2 web + bao cao
+        env:
+          WEALBEE_KEY_FREE: ${{ secrets.WEALBEE_KEY_FREE }}
+          WEALBEE_KEY_DN: ${{ secrets.WEALBEE_KEY_DN }}
+          MAT_KHAU_NOI_BO: ${{ secrets.MAT_KHAU_NOI_BO }}
+        run: python -m wb_api.chay --nguon github
+      - name: Luu ket qua
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data docs
+          if git diff --cached --quiet; then echo "khong co thay doi"; exit 0; fi
+          git commit -q -m "Quet $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4; do git pull -q --rebase && git push -q && exit 0; sleep $((i*5)); done
+          exit 1
