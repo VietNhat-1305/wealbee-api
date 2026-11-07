@@ -5,7 +5,8 @@ const NHAN = {revenue: 'Doanh thu', gross_profit: 'Lợi nhuận gộp', net_pro
   operating_profit: 'Lợi nhuận hoạt động', profit_before_tax: 'Lợi nhuận trước thuế', total_assets: 'Tổng tài sản',
   total_liabilities: 'Nợ phải trả', equity: 'Vốn chủ sở hữu', owners_equity: 'Vốn chủ sở hữu', cash: 'Tiền', cash_and_equivalents: 'Tiền và tương đương tiền',
   inventories: 'Hàng tồn kho', receivables: 'Phải thu', operating_cash_flow: 'LCTT hoạt động kinh doanh', investing_cash_flow: 'LCTT đầu tư',
-  financing_cash_flow: 'LCTT tài chính', net_interest_income: 'Thu nhập lãi thuần', operating_expenses: 'Chi phí hoạt động',
+  financing_cash_flow: 'LCTT tài chính', operating: 'LCTT từ hoạt động kinh doanh', investing: 'LCTT từ hoạt động đầu tư',
+  financing: 'LCTT từ hoạt động tài chính', net_change: 'Lưu chuyển tiền thuần trong kỳ', borrowings: 'Vay nợ', net_interest_income: 'Thu nhập lãi thuần', operating_expenses: 'Chi phí hoạt động',
   net_profit_parent: 'LNST của cổ đông công ty mẹ', eps: 'EPS', short_term_debt: 'Vay ngắn hạn', long_term_debt: 'Vay dài hạn'};
 const NGANH = {corporate: 'Doanh nghiệp', bank: 'Ngân hàng', securities: 'Chứng khoán', insurance: 'Bảo hiểm'};
 const nhanKhoa = k => NHAN[k] || k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
@@ -17,9 +18,11 @@ async function tai(ten) {
   const j = await r.json();
   return CH.ma_hoa ? moGoi(j, D.mk) : j;
 }
+// chỉ tiêu Wealbee: KQKD {quarter, quarter_prior_year, ytd, ytd_prior_year}; CĐKT {end_of_period, start_of_year}; LCTT {ytd, ytd_prior_year}
 const gt = m => m == null ? null : typeof m === 'number' ? m : typeof m === 'object' ?
-  (m.quarter ?? m.end ?? m.value ?? m.ytd ?? m.cumulative ?? Object.values(m).find(v => typeof v === 'number') ?? null) : null;
-const ssanh = m => (m && typeof m === 'object') ? (Object.entries(m).find(([k, v]) => typeof v === 'number' && /prior|last_year|previous|same_quarter|start/.test(k)) || [])[1] ?? null : null;
+  (m.quarter ?? m.end_of_period ?? m.ytd ?? m.end ?? m.value ?? null) : null;
+const ssanh = m => !(m && typeof m === 'object') ? null : m.quarter != null ? (m.quarter_prior_year ?? null)
+  : m.end_of_period != null ? (m.start_of_year ?? null) : m.ytd != null ? (m.ytd_prior_year ?? null) : null;
 const diem = st => Object.entries(st || {}).find(([k, v]) => /score|health/.test(k) && (typeof v === 'number' || (v && typeof v === 'object')))?.[1];
 
 async function main() {
@@ -54,8 +57,8 @@ function quyenHtml(q) {
   if (q.rate_limit_per_minute) o.push(`${so(q.rate_limit_per_minute)} request/phút`);
   if (q.delay_minutes != null) o.push(q.delay_minutes ? `trễ ${q.delay_minutes} phút` : 'thời gian thực');
   if (q.include_score != null) o.push(q.include_score ? 'có điểm sức khoẻ' : 'không có điểm sức khoẻ');
-  const hien = Object.entries(q).find(([k]) => /display/.test(k));
-  if (hien) o.push(hien[1] ? 'được hiển thị cho khách' : 'chỉ dùng nội bộ');
+  const hien = Object.entries(q).find(([k]) => /display|redistribution/.test(k));
+  if (hien) o.push(hien[1] ? 'được hiển thị lại cho khách' : 'chỉ dùng nội bộ');
   return o.join(' · ');
 }
 
@@ -122,7 +125,7 @@ function veCt(m) {
   $('#ct').innerHTML = `<div class="grid">
     <div class="card"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px">
       <h1>${m}</h1><div class="mut">${esc(c.name || '')}</div>
-      <div class="sm mut2">${esc(c.exchange || '')} · ${esc(NGANH[st.industry_type] || st.industry_type || '')} · Kỳ ${esc(kys[kys.length - 1])} · ${esc(st.scope || '')}</div></div>
+      <div class="sm mut2">${esc(c.exchange || '')} · ${esc(NGANH[st.industry_type] || st.industry_type || '')} · ${esc(st.period_label || kys[kys.length - 1])} · ${esc(st.scope === 'consolidated' ? 'hợp nhất' : st.scope === 'single_entity' ? 'riêng' : st.scope || '')}</div></div>
       <div style="text-align:right"><span class="tag ${esc(st.status)}">${esc(st.status || '')}</span>
       <div class="sm mut" style="margin-top:6px">Phép kiểm: <b>${st.kiem?.dat ?? '—'}/${st.kiem?.tong ?? '—'}</b> đạt${st.kiem?.loi?.length ? ` · lỗi: ${esc(st.kiem.loi.join(', '))}` : ''}</div>
       ${sk != null ? `<div class="sm" style="margin-top:4px">Điểm sức khoẻ: <b>${esc(typeof sk === 'object' ? JSON.stringify(sk) : so(sk, 1))}</b>/10</div>` :
@@ -132,11 +135,14 @@ function veCt(m) {
     <div class="card"><h3>Doanh thu và lợi nhuận theo quý</h3>${bieuDoCot(kys, [
       {ten: 'Doanh thu', mau: '#4f8cff', gt: kys.map(k => gt((du.ky[k].income_statement || {}).revenue))},
       {ten: 'LNST', mau: '#22c55e', gt: kys.map(k => gt((du.ky[k].income_statement || {}).net_profit))}])}</div>
-    ${bangChiTieu('Kết quả kinh doanh (quý)', inc)}${bangChiTieu('Cân đối kế toán (cuối kỳ so với đầu năm)', bs)}${bangChiTieu('Lưu chuyển tiền tệ (luỹ kế)', cf)}
+    ${bangChiTieu('Kết quả kinh doanh (quý, so với cùng quý năm trước)', inc)}${bangChiTieu('Cân đối kế toán (cuối kỳ so với đầu năm)', bs)}${bangChiTieu(`Lưu chuyển tiền tệ (luỹ kế ${st.months_ytd || ''} tháng, so với cùng kỳ)`, cf)}
     <div class="card sm"><h3>Nguồn gốc số liệu</h3>
       ${ng.document_url ? `<div>File gốc: <a href="${esc(ng.document_url)}" target="_blank" rel="noopener">${esc(ng.document_url.slice(0, 80))}</a></div>` : ''}
       ${ng.pages ? `<div class="mut">Trang: ${esc(Object.entries(ng.pages).map(([k, v]) => `${nhanKhoa(k)} tr.${v}`).join(' · '))}</div>` : ''}
-      ${Object.entries(ng).filter(([k]) => k.endsWith('_at')).map(([k, v]) => `<div class="mut">${esc(k === 'detected_at' ? 'Wealbee thấy file' : k)}: ${tg(v)}</div>`).join('')}
+      ${ng.source ? `<div class="mut">Nguồn file: ${esc(ng.source)}${ng.model ? ` · chép số bằng ${esc(ng.model)}` : ''}</div>` : ''}
+      ${[['detected_at', 'Wealbee thấy file'], ['extracted_at', 'Chép xong số'], ['first_published_at', 'Công bố trên API']].filter(([k]) => ng[k])
+        .map(([k, t]) => `<div class="mut">${t}: ${tg(ng[k])}</div>`).join('')}
+      ${ng.detected_at && ng.first_published_at ? `<div>Độ trễ thấy file → có số: <b>${so((new Date(ng.first_published_at) - new Date(ng.detected_at)) / 36e5, 1)} giờ</b></div>` : ''}
       ${st.review_reasons?.length ? `<div style="color:var(--warn)">Cần soát: ${esc(st.review_reasons.join('; '))}</div>` : ''}</div></div>`;
   veGia(m);
 }

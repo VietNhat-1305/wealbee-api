@@ -52,7 +52,7 @@ def main(argv=None) -> int:
         elif r.get("luot"):
             ms = sorted(l["ms_tong"] for l in r["luot"] if l.get("dung") and not l.get("lanh"))
             print(f"{r['goi']}: {sum(bool(l.get('dung')) for l in r['luot'])}/{len(r['luot'])} đúng kỳ vọng, "
-                  f"p50 {ms[len(ms) // 2] if ms else '-'} ms" + (f" | lỗi: {r['loi']}" if r.get("loi") else ""))
+                  f"p50 {round(ms[len(ms) // 2]) if ms else '-'} ms" + (f" | lỗi: {r['loi']}" if r.get("loi") else ""))
         else:
             print(f"{r['goi']}: {r.get('bo_qua') or r.get('loi')}")
     if a.dong_bo or a.nguon == "github":

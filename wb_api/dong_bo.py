@@ -66,9 +66,9 @@ def _doc(goi: str, ten: str):
 
 def _gon(st: dict) -> dict:
     """Bản gọn của 1 statement cho web (bỏ phần nặng không hiển thị)."""
-    keep = ("id", "ticker", "period", "fiscal_year", "fiscal_quarter", "status", "scope", "industry_type", "original_unit",
-            "income_statement", "balance_sheet", "cash_flow", "review_reasons", "derived", "updated_at", "published_at",
-            "version", "as_of")
+    keep = ("id", "ticker", "period", "period_label", "fiscal_year", "fiscal_quarter", "months_ytd", "status", "scope",
+            "industry_type", "original_unit", "currency", "income_statement", "balance_sheet", "cash_flow", "review_reasons",
+            "derived", "version")
     out = {k: st[k] for k in keep if k in st}
     out.update({k: v for k, v in st.items() if ("score" in k or "health" in k) and k not in out})
     ch = [c for c in st.get("checks") or [] if isinstance(c, dict)]
@@ -76,7 +76,11 @@ def _gon(st: dict) -> dict:
                    "loi": [c.get("code") for c in ch if c.get("status") == "failed"]}
     p = st.get("provenance") or {}
     if isinstance(p, dict):
-        out["nguon_goc"] = {k: v for k, v in p.items() if k in ("document_url", "pages", "detected_at", "sha256") or k.endswith("_at")}
+        out["nguon_goc"] = {k: p[k] for k in ("document_url", "pages", "source", "ir_url", "detected_at", "first_published_at",
+                                               "updated_at") if k in p}
+        if isinstance(p.get("extraction"), dict):
+            out["nguon_goc"]["extracted_at"] = p["extraction"].get("extracted_at")
+            out["nguon_goc"]["model"] = p["extraction"].get("model")
     return out
 
 
@@ -104,7 +108,7 @@ def dong_bo(goi: str) -> dict:
         if tt.get("ngay_cong_ty") != bat_dau[:10] or _doc(goi, "cong_ty") is None:
             cty, cur = [], None
             while so_req < HAN_MUC[goi]:
-                l = wb.goi("companies", "/companies", {"limit": 100, **({"cursor": cur} if cur else {})})
+                l = wb.goi("companies", "/companies", {"limit": 500, **({"cursor": cur} if cur else {})})
                 so_req += 1
                 if l.status != 200:
                     break
@@ -119,7 +123,7 @@ def dong_bo(goi: str) -> dict:
                 _ghi(goi, "cong_ty", {"cap_nhat": bat_dau, "ds": cty})
         # BCTC: tăng dần theo updated_since + con trỏ dở dang
         tt = _doc_tt(goi)
-        params = {"view": "full", "limit": 50}
+        params = {"view": "full", "limit": 200}
         if tt.get("updated_since"):
             params["updated_since"] = tt["updated_since"]
         cur = tt.get("cursor")

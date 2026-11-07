@@ -3,10 +3,15 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
+const _khoa = {};                               // nhớ khoá đã dẫn theo (muối, mật khẩu): mở nhiều file chỉ chậm lần đầu
 async function moGoi(goi, matKhau) {
-  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(matKhau), 'PBKDF2', false, ['deriveKey']);
-  const khoa = await crypto.subtle.deriveKey({name: 'PBKDF2', salt: b64(goi.salt), iterations: goi.iter, hash: 'SHA-256'},
-    base, {name: 'AES-GCM', length: 256}, false, ['decrypt']);
+  const id = goi.salt + '|' + goi.iter + '|' + matKhau;
+  if (!_khoa[id]) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(matKhau), 'PBKDF2', false, ['deriveKey']);
+    _khoa[id] = await crypto.subtle.deriveKey({name: 'PBKDF2', salt: b64(goi.salt), iterations: goi.iter, hash: 'SHA-256'},
+      base, {name: 'AES-GCM', length: 256}, false, ['decrypt']);
+  }
+  const khoa = _khoa[id];
   const pt = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b64(goi.iv)}, khoa, b64(goi.ct));
   return JSON.parse(new TextDecoder().decode(pt));
 }

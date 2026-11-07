@@ -9,6 +9,7 @@ Mỗi ngày 1 lần:  bắn dồn để kiểm giới hạn tốc độ (429 + R
 from __future__ import annotations
 
 import os
+import re
 import socket
 import ssl
 import time
@@ -53,35 +54,47 @@ def _thoi_gian(s) -> datetime | None:
 
 
 def _do_tuoi(st: dict) -> dict | None:
-    """provenance: lúc Wealbee thấy file -> lúc có số (các trường *_at)."""
+    """provenance: lúc Wealbee thấy file (detected_at) -> lúc có số công khai (first_published_at)."""
     p = st.get("provenance") if isinstance(st, dict) else None
     if not isinstance(p, dict):
         return None
-    moc = {k: v for k, v in p.items() if k.endswith("_at") and _thoi_gian(v)}
-    thay = _thoi_gian(moc.get("detected_at")) if moc.get("detected_at") else None
-    sau = [(_thoi_gian(v), k) for k, v in moc.items() if k != "detected_at"]
-    sau = [(t, k) for t, k in sau if t and thay and t >= thay]
-    out = {"moc": moc}
-    if thay and sau:
-        t, k = max(sau)
-        out.update(phut=round((t - thay).total_seconds() / 60, 1), den=k)
+    thay, cong_bo = _thoi_gian(p.get("detected_at")), _thoi_gian(p.get("first_published_at"))
+    chep = _thoi_gian((p.get("extraction") or {}).get("extracted_at")) if isinstance(p.get("extraction"), dict) else None
+    out = {"id": st.get("id")}
+    if thay and cong_bo:
+        out["phut"] = round((cong_bo - thay).total_seconds() / 60, 1)
+    if thay and chep:
+        out["phut_chep"] = round((chep - thay).total_seconds() / 60, 1)
     return out
+
+
+QUY_URL = re.compile(r"(?:quy|qu%c3%bd|quý|q)[\s_%20.-]*([1-4])(?![0-9])", re.I)
+
+
+def lech_ky(url: str | None, ky: str | None) -> bool | None:
+    """Tên file PDF gốc ghi quý khác kỳ của statement (VD file "..._Q2_2026_..." gắn vào 2026Q3)?"""
+    if not url or not ky or "Q" not in ky:
+        return None
+    ten = url.split("?")[0].rsplit("/", 1)[-1]
+    m = QUY_URL.findall(ten)
+    return None if not m else (m[-1] != ky.split("Q")[-1])
 
 
 def tom_tat_goi(me: dict) -> dict:
     """Chỉ giữ quyền của gói từ /me (bỏ email, tên tài khoản, tiền tố khoá...)."""
-    plan = me.get("plan") if isinstance(me.get("plan"), dict) else (me.get("account") or {}).get("plan") or me
+    plan = next((me[k] for k in ("entitlements", "plan") if isinstance(me.get(k), dict)), me)
     giu = ("name", "rate_limit_per_minute", "delay_minutes", "include_score", "max_webhook_endpoints", "products", "exchanges",
-           "valid_until", "allow_redisplay", "redisplay", "display")
+           "valid_until", "redistribution", "allow_redisplay", "redisplay", "display")
     out = {k: v for k, v in plan.items() if k in giu or "display" in k} if isinstance(plan, dict) else {}
     if isinstance(plan, dict) and isinstance(plan.get("tickers"), list):
         out["so_ma_gioi_han"] = len(plan["tickers"])
     for k in ("environment", "env", "livemode"):
         if k in me:
             out["moi_truong"] = me[k]
-    for k in ("usage", "calls_this_month", "requests_this_month"):
-        if k in me:
-            out["luot_goi_thang"] = me[k]
+    if isinstance(me.get("usage"), dict):
+        out["luot_goi_thang"] = me["usage"].get("requests")
+    if me.get("data_updated_at"):
+        out["du_lieu_cap_nhat"] = me["data_updated_at"]
     return out
 
 
@@ -131,19 +144,33 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         if sid:
             full = g("statement_full", f"/statements/{sid}", {"view": "full"})
             if isinstance(full.json, dict):
-                ghi["tuoi"] = _do_tuoi(full.json)
                 ghi["mau_bc"] = {"id": sid, "status": full.json.get("status"),
                                  "kiem": _chat_luong([full.json])["kiem"], "provenance": bool(full.json.get("provenance"))}
             g("versions", f"/statements/{sid}/versions")
         f = g("filings", "/filings", {"limit": 20})
-        ghi["filings"] = {}
+        ghi["filings"], lk = {}, []
         for x in ds(f.json):
             if isinstance(x, dict):
                 ghi["filings"][x.get("status") or "?"] = ghi["filings"].get(x.get("status") or "?", 0) + 1
-        g("events", "/events", {"limit": 20})
-        ghi["chat_luong"] = _chat_luong(ds(s1.json))
+                if lech_ky(x.get("document_url"), x.get("period")):
+                    lk.append(x.get("statement_id") or f"{x.get('ticker')}.{x.get('period')}")
+        ev = g("events", "/events", {"limit": 20})
+        tuoi = []
+        for e in ds(ev.json):
+            st = ((e or {}).get("data") or {}).get("statement") if isinstance(e, dict) else None
+            if isinstance(st, dict) and e.get("type") == "statement.published":
+                t = _do_tuoi(st)
+                if t and t.get("phut") is not None:
+                    tuoi.append(t)
+                if lech_ky((st.get("provenance") or {}).get("document_url"), st.get("period")):
+                    lk.append(st.get("id"))
+        ghi["tuoi_ds"] = tuoi
+        ghi["lech_ky"] = sorted(set(x for x in lk if x))
+        ghi["chat_luong"] = _chat_luong(ds(s1.json) + [e["data"]["statement"] for e in ds(ev.json) if isinstance(e, dict)
+                                                       and isinstance((e.get("data") or {}).get("statement"), dict)])
         g("err_400", "/statements", {"period": "2026Q9"}, kv=400)
-        g("err_404", "/statements/ZZZZ.2026Q1", kv=404)
+        g("err_404", "/statements/FPT.2015Q1", kv=404)                      # mã có thật, kỳ không có số -> phải 404
+        g("info_ma_la", "/statements/ZZZZ.2026Q1", kv=404)                  # mã không tồn tại: ghi nhận, không chấm điểm
         g("err_401", "/me", kv=401, khoa_="wb_live_sai_" + "0" * 24)
         hl = next((l for l in lu if l.get("hieu_luc")), None)
         if hl:
@@ -154,6 +181,27 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         wb.close()
     ghi["luot"] = lu
     return ghi
+
+
+def do_phu(khoa: str, goi: str) -> dict:
+    """Độ phủ: đếm công ty và kỳ mới nhất có số (1 lần / ngày, vài request)."""
+    wb = WB(khoa, goi, nhip_toi_thieu=2.1)
+    try:
+        cty, cur, ky = 0, None, {}
+        for _ in range(10):
+            l = wb.goi("companies_all", "/companies", {"limit": 500, **({"cursor": cur} if cur else {})})
+            if l.status != 200:
+                return {"loi": f"HTTP {l.status}"}
+            for x in ds(l.json):
+                cty += 1
+                k = ((x or {}).get("coverage") or {}).get("latest_period") or "chưa có số"
+                ky[k] = ky.get(k, 0) + 1
+            cur = con_tro(l.json)
+            if not cur:
+                break
+        return {"so_cong_ty": cty, "ky_moi_nhat": dict(sorted(ky.items(), reverse=True))}
+    finally:
+        wb.close()
 
 
 def suc_khoe(n: int = 3) -> list[dict]:
@@ -247,6 +295,8 @@ def chay(nguon: str) -> list[dict]:
             continue
         try:
             rec.update(bo_do(goi, khoa, gio))
+            if now.hour == 2 or os.environ.get("QUET_HANG_NGAY") or not os.environ.get("CO_DO_PHU"):
+                rec["phu"] = do_phu(khoa, goi)
             if (now.hour == 2 or os.environ.get("QUET_HANG_NGAY")) and nguon == "github":
                 time.sleep(61)                                               # trả lại hạn mức phút trước khi bắn dồn
                 rec["ban_don"] = ban_don(goi, khoa)

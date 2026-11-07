@@ -28,15 +28,18 @@ def mat_khau() -> str:
     return mk
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=256)
 def _khoa(mk: str, muoi: bytes, lap: int = LAP) -> bytes:
     return PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=muoi, iterations=lap).derive(mk.encode("utf-8"))
+
+
+_MUOI_LUOT = os.urandom(16)                     # 1 muối cho mọi gói của 1 lượt chạy: dẫn khoá 1 lần (web cũng nhớ khoá theo muối)
 
 
 def goi(obj, mk: str | None = None) -> dict:
     """Mã hoá 1 đối tượng JSON thành gói cho web."""
     mk = mk or mat_khau()
-    muoi, iv = os.urandom(16), os.urandom(12)
+    muoi, iv = _MUOI_LUOT, os.urandom(12)
     ct = AESGCM(_khoa(mk, muoi)).encrypt(iv, json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), None)
     b = lambda x: base64.b64encode(x).decode()                                  # noqa: E731
     return {"v": 1, "salt": b(muoi), "iter": LAP, "iv": b(iv), "ct": b(ct)}

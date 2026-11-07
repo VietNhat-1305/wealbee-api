@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DO = ROOT / "data" / "do"
 RA = ROOT / "docs" / "bao-cao" / "bao_cao.enc"
 LOI_CO_Y = ("err_400", "err_404", "err_401")
+THONG_TIN = ("info_ma_la",)                     # bài đo chỉ ghi nhận, không chấm
 
 
 def doc_tat_ca(ngay: int = 30) -> list[dict]:
@@ -73,7 +74,8 @@ def _xep(gia_tri, dat, kha, lon_hon_tot=True) -> str:
 def tong_hop_goi(rs: list[dict]) -> dict:
     """Số liệu của 1 gói (1 nguồn đo hoặc gộp)."""
     luot = [l for r in rs for l in r.get("luot", [])]
-    thuong = [l for l in luot if l["ep"] not in LOI_CO_Y]
+    ma_la = [l for l in luot if l["ep"] == "info_ma_la"]
+    thuong = [l for l in luot if l["ep"] not in LOI_CO_Y + THONG_TIN]
     am = [l for l in thuong if l.get("status") != 429]
     ok = [l for l in am if l.get("dung")]
     may_chu = [l for l in am if l.get("loi_mang") or (l.get("status") or 0) >= 500]
@@ -83,11 +85,15 @@ def tong_hop_goi(rs: list[dict]) -> dict:
         if not l.get("lanh"):
             theo_ep[l["ep"]].append(l["ms_tong"])
     loi_cy = [l for l in luot if l["ep"] in LOI_CO_Y]
-    tuoi = {}
+    tuoi, lk = {}, set()
     for r in rs:
+        for t in r.get("tuoi_ds") or []:
+            if t.get("phut") is not None and t.get("id"):
+                tuoi[t["id"]] = t["phut"]
         t = r.get("tuoi") or {}
         if t.get("phut") is not None and r.get("mau_bc", {}).get("id"):
             tuoi[r["mau_bc"]["id"]] = t["phut"]
+        lk.update(r.get("lech_ky") or [])
     cl = defaultdict(int)
     kiem = defaultdict(int)
     for r in rs[-48:]:                                         # chất lượng: 48 lượt gần nhất
@@ -127,7 +133,11 @@ def tong_hop_goi(rs: list[dict]) -> dict:
         "do_tre_du_lieu_s": _thong_ke(tre),
         "chat_luong": {"trang_thai": dict(cl), "verified": round(100 * cl.get("verified", 0) / tong_cl, 1) if tong_cl else None,
                        "kiem_dat": round(100 * kiem["passed"] / tong_kiem, 1) if tong_kiem else None},
-        "so_cong_ty": next((r.get("so_cong_ty") for r in reversed(rs) if r.get("so_cong_ty")), None),
+        "so_cong_ty": next(((r.get("phu") or {}).get("so_cong_ty") or r.get("so_cong_ty") for r in reversed(rs)
+                            if (r.get("phu") or {}).get("so_cong_ty") or r.get("so_cong_ty")), None),
+        "ky_moi_nhat": next(((r.get("phu") or {}).get("ky_moi_nhat") for r in reversed(rs) if (r.get("phu") or {}).get("ky_moi_nhat")), None),
+        "lech_ky": sorted(lk),
+        "ma_la": {"n": len(ma_la), "ma": sorted({f"{l.get('status')} {l.get('code') or ''}".strip() for l in ma_la})},
         "quyen": next((r.get("me") for r in reversed(rs) if r.get("me")), None),
         "loi": dict(loi_ds), "chuoi": chuoi[-24 * 30:],
         "bo_qua": next((r.get("bo_qua") for r in reversed(rs) if r.get("bo_qua")), None) if not luot else None,
@@ -176,6 +186,10 @@ def diem_tong(tc: list[dict]) -> float | None:
     return round(100 * sum(he[t["xep"]] * t["trong_so"] for t in co) / sum(t["trong_so"] for t in co), 1)
 
 
+def so_vn(x, d: int = 0) -> str:
+    return "—" if x is None else f"{x:,.{d}f}".replace(",", "§").replace(".", ",").replace("§", ".")
+
+
 def nhan_xet(goi: dict) -> list[str]:
     out = []
     for ten, g in goi.items():
@@ -189,11 +203,26 @@ def nhan_xet(goi: dict) -> list[str]:
             out.append(f"{nhan}: độ trễ p95 {t['do_tre']['gia_tri']} ms, cao hơn ngưỡng 1.000 ms; nên xem lại cache / vị trí máy chủ "
                        "(edge hiện ở Hồng Kông).")
         if t["do_tuoi"]["xep"] in ("kha", "chua_dat"):
-            out.append(f"{nhan}: thời gian từ lúc thấy file tới lúc có số trung vị {t['do_tuoi']['gia_tri']} phút, chậm hơn mục tiêu 15 phút.")
+            v = t["do_tuoi"]["gia_tri"]
+            out.append(f"{nhan}: từ lúc thấy file tới lúc có số trung vị {so_vn(v)} phút (~{so_vn(v / 60, 1)} giờ), "
+                       "chậm hơn nhiều so với mục tiêu 15 phút Wealbee công bố"
+                       + (". Có thể do tồn đọng giai đoạn mới ra mắt API (v1, 11/2026): theo dõi thêm vài tuần." if v > 24 * 60 else "."))
         if t["chat_luong"]["xep"] in ("kha", "chua_dat"):
             out.append(f"{nhan}: chỉ {t['chat_luong']['gia_tri']}% BCTC ở trạng thái verified, còn lại cần soát (needs_review).")
+        if g["tong"].get("lech_ky"):
+            out.append(f"{nhan}: {len(g['tong']['lech_ky'])} BCTC có tên file PDF gốc ghi quý khác kỳ của số liệu: "
+                       f"{', '.join(g['tong']['lech_ky'][:8])}{'…' if len(g['tong']['lech_ky']) > 8 else ''}. Một phần có thể do niên độ "
+                       "lệch năm dương lịch (VD CMG, SBT, HSG), cần đối chiếu tay; không tính vào điểm.")
+        ml = g["tong"].get("ma_la") or {}
+        if ml.get("n") and any(not x.startswith("404") for x in ml.get("ma", [])):
+            out.append(f"{nhan}: gọi mã không tồn tại trả {', '.join(ml['ma'])} thay vì 404 not_found (dễ làm khách hiểu nhầm là thiếu quyền).")
         if t["rate_limit"]["xep"] == "chua_dat":
             out.append(f"{nhan}: giới hạn tốc độ chưa minh bạch (thiếu header RateLimit hoặc 429 không kèm Retry-After).")
+    for ten, g in goi.items():
+        cham = [(e, v["p50"]) for e, v in (g["tong"].get("theo_ep") or {}).items() if v.get("n") and (v.get("p50") or 0) > 2000]
+        if cham:
+            out.append(("Gói Doanh nghiệp" if ten == "dn" else "Gói Free") + ": endpoint chậm bất thường (p50 > 2 giây): "
+                       + ", ".join(f"{e} {so_vn(ms)} ms" for e, ms in cham) + ".")
     if "free" in goi and "dn" in goi and goi["free"]["tong"].get("so_request") and goi["dn"]["tong"].get("so_request"):
         a, b = goi["free"]["tong"]["do_tre"].get("p95"), goi["dn"]["tong"]["do_tre"].get("p95")
         if a and b:
