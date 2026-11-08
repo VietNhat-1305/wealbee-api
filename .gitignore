@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 .venv/
 nhat_ky*.log
+data/.thay_doi_da_xem

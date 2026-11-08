@@ -27,6 +27,36 @@ def nap_env() -> None:
                 os.environ[k.strip()] = v.strip()
 
 
+def bao_thay_doi_moi() -> None:
+    """Máy Windows: GitHub vừa viết báo cáo thay đổi mới (đã kéo về bằng git pull) -> hiện thông báo góc màn hình."""
+    import hashlib
+    import subprocess
+    f, da_xem = ROOT / "docs" / "bao-cao" / "thay_doi.enc", ROOT / "data" / ".thay_doi_da_xem"
+    if not f.exists() or sys.platform != "win32":
+        return
+    bam = hashlib.sha256(f.read_bytes()).hexdigest()
+    if da_xem.exists() and da_xem.read_text(encoding="utf-8").strip() == bam:
+        return
+    lan_dau = not da_xem.exists()
+    da_xem.write_text(bam, encoding="utf-8")
+    if lan_dau:
+        return
+    try:
+        from . import ma_hoa
+        b = ma_hoa.mo_goi(json.loads(f.read_text(encoding="utf-8")))[0]
+        chu = (b["tieu_de"] + " - xem: vietnhat-1305.github.io/wealbee-api/bao-cao").replace("'", "")[:230]
+        ps = ("[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]>$null;"
+              "$x=[Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(2);$t=$x.GetElementsByTagName('text');"
+              "$t[0].AppendChild($x.CreateTextNode('Wealbee API: bao cao thay doi moi'))>$null;"
+              f"$t[1].AppendChild($x.CreateTextNode('{chu}'))>$null;"
+              "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Wealbee API').Show("
+              "[Windows.UI.Notifications.ToastNotification]::new($x))")
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=20)
+        print("đã báo: có báo cáo thay đổi mới")
+    except Exception as e:  # noqa: BLE001
+        print("không hiện được thông báo:", str(e)[:120])
+
+
 def main(argv=None) -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser()
@@ -39,6 +69,8 @@ def main(argv=None) -> int:
     if not os.environ.get("MAT_KHAU_NOI_BO", "").strip():          # chưa cài secret: bỏ qua, không ghi dữ liệu hở
         print("Chưa có MAT_KHAU_NOI_BO (file .env / GitHub secret): bỏ qua lượt này")
         return 0
+    if a.nguon == "may-vn":
+        bao_thay_doi_moi()
     rs = quet.chay(a.nguon)
     f = ROOT / "data" / "do" / a.nguon / f"{datetime.now(timezone.utc):%Y-%m}.jsonl"
     f.parent.mkdir(parents=True, exist_ok=True)
