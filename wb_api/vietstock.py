@@ -120,7 +120,7 @@ def cap_nhat_tin(ds_ma: set[str]) -> dict:
             s = r.content.decode("utf-8", "replace")
             for it in re.findall(r"<item>(.*?)</item>", s, re.S):
                 g = lambda tag: html.unescape((re.search(rf"<{tag}>(.*?)</{tag}>", it, re.S) or [None, ""])[1]).strip()   # noqa: E731
-                link = g("link")
+                link = g("link").replace("http://", "https://")
                 if not link or link in cache:
                     if link in cache and muc not in cache[link]["muc"]:
                         cache[link]["muc"].append(muc)
