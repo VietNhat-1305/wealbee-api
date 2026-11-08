@@ -86,11 +86,11 @@ function veDs() {
   const q = khoBo(D.loc.trim());
   const ds = Object.entries(D.idx.cong_ty || {}).filter(([m, v]) => (!D.nganh || v.nganh === D.nganh) &&
     (!q || khoBo(m + ' ' + (D.cty[m]?.name || '')).includes(q))).sort((a, b) => a[0].localeCompare(b[0]));
-  const co = ds.some(([, v]) => Object.keys(v).some(k => /score/.test(k)));
+  const co = ds.some(([, v]) => v.diem != null);
   $('#ds').innerHTML = ds.length ? `<table><tr><th>Mã</th><th>Kỳ</th><th class="n">Doanh thu<br><span class="xs">tỷ đồng</span></th><th class="n">LNST<br><span class="xs">tỷ đồng</span></th>${co ? '<th class="n">Điểm</th>' : ''}<th></th></tr>
     ${ds.slice(0, 800).map(([m, v]) => `<tr class="row" onclick="location.hash='${m}'"><td><b>${m}</b><div class="xs mut2">${esc((D.cty[m]?.name || '').slice(0, 34))}</div></td>
       <td class="sm">${esc(v.ky)}</td><td class="n">${so(v.dt / 1e9)}</td><td class="n ${v.ln < 0 ? 'down' : ''}">${so(v.ln / 1e9)}</td>
-      ${co ? `<td class="n">${so(Object.entries(v).find(([k]) => /score/.test(k))?.[1], 1)}</td>` : ''}<td><span class="tag ${esc(v.tt)}">${esc(v.tt === 'verified' ? '✓' : v.tt === 'needs_review' ? 'soát' : v.tt || '')}</span></td></tr>`).join('')}</table>`
+      ${co ? `<td class="n">${v.diem == null ? '—' : `<b>${so(v.diem)}</b><span class="xs mut2">/${v.diem_max || 10}</span>`}</td>` : ''}<td><span class="tag ${esc(v.tt)}">${esc(v.tt === 'verified' ? '✓' : v.tt === 'needs_review' ? 'soát' : v.tt || '')}</span></td></tr>`).join('')}</table>`
     : '<div class="empty">Không có mã khớp.</div>';
 }
 
@@ -128,7 +128,7 @@ function veCt(m) {
       <div class="sm mut2">${esc(c.exchange || '')} · ${esc(NGANH[st.industry_type] || st.industry_type || '')} · ${esc(st.period_label || kys[kys.length - 1])} · ${esc(st.scope === 'consolidated' ? 'hợp nhất' : st.scope === 'single_entity' ? 'riêng' : st.scope || '')}</div></div>
       <div style="text-align:right"><span class="tag ${esc(st.status)}">${esc(st.status || '')}</span>
       <div class="sm mut" style="margin-top:6px">Phép kiểm: <b>${st.kiem?.dat ?? '—'}/${st.kiem?.tong ?? '—'}</b> đạt${st.kiem?.loi?.length ? ` · lỗi: ${esc(st.kiem.loi.join(', '))}` : ''}</div>
-      ${sk != null ? `<div class="sm" style="margin-top:4px">Điểm sức khoẻ: <b>${esc(typeof sk === 'object' ? JSON.stringify(sk) : so(sk, 1))}</b>/10</div>` :
+      ${sk != null ? `<div class="sm" style="margin-top:4px">Điểm sức khoẻ tài chính: <b style="font-size:18px">${so(typeof sk === 'object' ? sk.value : sk)}</b>/${typeof sk === 'object' ? sk.max || 10 : 10}${typeof sk === 'object' && sk.missing_points ? ` <span class="xs mut2">(thiếu ${sk.missing_points} tiêu chí)</span>` : ''}</div>` :
         `<div class="xs mut2" style="margin-top:4px">${CH.goi === 'free' ? 'Gói Free không có điểm sức khoẻ' : 'Chưa có điểm sức khoẻ'}</div>`}</div></div></div>
     <div class="grid g4">${kpi('Doanh thu quý', dt, dtS)}${kpi('LNST quý', ln, lnS)}${kpi('Tổng tài sản', gt(bs.total_assets), ssanh(bs.total_assets))}</div>
     <div class="card"><h3>Giá cổ phiếu 12 tháng · nguồn VNDirect (API miễn phí)</h3><div id="gia" class="empty sm">Đang tải giá…</div></div>

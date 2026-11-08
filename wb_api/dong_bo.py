@@ -17,7 +17,7 @@ from pathlib import Path
 
 from . import ma_hoa
 from .client import WB
-from .quet import GOI, con_tro, ds, tom_tat_goi
+from .quet import GOI, con_tro, ds, goi_thuc_te, tom_tat_goi
 
 ROOT = Path(__file__).resolve().parent.parent
 THU_MUC = {"dn": ROOT / "docs" / "doanh-nghiep" / "data", "free": ROOT / "docs" / "free" / "data"}
@@ -84,6 +84,25 @@ def _gon(st: dict) -> dict:
     return out
 
 
+def _dong_chi_muc(cu: dict) -> dict:
+    ky, st = next(iter(cu["ky"].items()))
+    inc = st.get("income_statement") or {}
+    val = lambda k: (inc.get(k) or {}).get("quarter") if isinstance(inc.get(k), dict) else inc.get(k)   # noqa: E731
+    hs = st.get("health_score")
+    return {"ky": ky, "tt": st.get("status"), "dt": val("revenue"), "ln": val("net_profit"), "nganh": st.get("industry_type"),
+            **({"diem": hs.get("value"), "diem_max": hs.get("max")} if isinstance(hs, dict) and hs.get("value") is not None else {})}
+
+
+def dung_lai_chi_muc(goi: str) -> int:
+    """Dựng lại chỉ mục từ mọi file mã (sau khi đổi cấu trúc chỉ mục)."""
+    idx = _doc(goi, "index") or {"cong_ty": {}}
+    for f in sorted((THU_MUC[goi] / "ma").glob("*.json" + (".enc" if MA_HOA[goi] else ""))):
+        ma = f.name.split(".")[0]
+        idx["cong_ty"][ma] = _dong_chi_muc(_doc(goi, f"ma/{ma}"))
+    _ghi(goi, "index", idx)
+    return len(idx["cong_ty"])
+
+
 def _ma_ky(st: dict) -> tuple[str, str]:
     sid = str(st.get("id", ""))
     ma = st.get("ticker") or sid.split(".")[0]
@@ -104,6 +123,8 @@ def dong_bo(goi: str) -> dict:
         so_req += 1
         if me.status != 200:
             return {"goi": goi, "loi": f"/me trả {me.status} {me.code or ''}"}
+        if isinstance(me.json, dict) and goi_thuc_te(me.json) != goi:
+            return {"goi": goi, "bo_qua": f"khoá {GOI[goi]} không thuộc gói {goi} (quyền tính theo tài khoản)"}
         # danh sách công ty: làm mới mỗi ngày
         if tt.get("ngay_cong_ty") != bat_dau[:10] or _doc(goi, "cong_ty") is None:
             cty, cur = [], None
@@ -160,14 +181,8 @@ def dong_bo(goi: str) -> dict:
             doi += _ghi(goi, f"ma/{ma}", cu)
         # chỉ mục cho trang tra cứu
         idx = _doc(goi, "index") or {"cong_ty": {}}
-        for ma, kys in moi.items():
-            cu = _doc(goi, f"ma/{ma}")
-            ky, st = next(iter(cu["ky"].items()))
-            inc = st.get("income_statement") or {}
-            val = lambda k: (inc.get(k) or {}).get("quarter") if isinstance(inc.get(k), dict) else inc.get(k)   # noqa: E731
-            idx["cong_ty"][ma] = {"ky": ky, "tt": st.get("status"), "dt": val("revenue"), "ln": val("net_profit"),
-                                  "nganh": st.get("industry_type"),
-                                  **{k: v for k, v in st.items() if "score" in k and isinstance(v, (int, float))}}
+        for ma in moi:
+            idx["cong_ty"][ma] = _dong_chi_muc(_doc(goi, f"ma/{ma}"))
         if moi or "quyen" not in idx:                                      # chỉ mục chỉ ghi lại khi dữ liệu đổi
             idx.update(cap_nhat=bat_dau, goi=goi, quyen=tom_tat_goi(me.json if isinstance(me.json, dict) else {}),
                        so_ma=len(idx["cong_ty"]))

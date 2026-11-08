@@ -111,6 +111,13 @@ def _chat_luong(sts: list) -> dict:
     return out
 
 
+def goi_thuc_te(me: dict) -> str:
+    """Gói thật của khoá theo quyền trong /me: gói Free = tự phục vụ (không hiển thị lại, không điểm sức khoẻ, 30 request/phút).
+    Quyền tính theo TÀI KHOẢN: tài khoản được nâng lên hợp đồng thì mọi khoá cũ của nó cũng thành gói Doanh nghiệp."""
+    e = me.get("entitlements") if isinstance(me.get("entitlements"), dict) else {}
+    return "dn" if (e.get("redistribution") or e.get("include_score") or (e.get("rate_limit_per_minute") or 0) > 30) else "free"
+
+
 def bo_do(goi: str, khoa: str, gio: int) -> dict:
     """Bộ đo hằng giờ cho 1 gói."""
     t = VN30[gio % len(VN30)]
@@ -131,6 +138,9 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         me = g("me", "/me")
         if isinstance(me.json, dict):
             ghi["me"] = tom_tat_goi(me.json)
+            if me.status == 200 and goi_thuc_te(me.json) != goi:              # khoá không đúng gói: không đo, tránh lẫn số liệu
+                return {"sai_goi": f"khoá {GOI[goi]} đang thuộc gói {'Doanh nghiệp' if goi_thuc_te(me.json) == 'dn' else 'Free'} "
+                                   "(quyền tính theo tài khoản) -> bỏ qua", "me": ghi["me"]}
         c = g("companies", "/companies", {"limit": 20})
         ghi["so_cong_ty"] = (c.json or {}).get("total") if isinstance(c.json, dict) else None
         g("company", f"/companies/{t}")
