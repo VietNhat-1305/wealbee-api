@@ -1,5 +1,4 @@
 @echo off
-rem Chay 1 lan: tao lich Windows quet Wealbee API moi gio tu may nay (chay an, khong hien cua so).
-schtasks /Create /TN "WealbeeAPI_QuetMayVN" /SC HOURLY /MO 1 /ST 00:37 /TR "wscript.exe //B //Nologo \"%~dp0chay_may.vbs\"" /F
-echo Da tao lich. Xoa lich: schtasks /Delete /TN "WealbeeAPI_QuetMayVN" /F
+rem Chay 1 lan: tao lich Windows quet Wealbee API (khi dang nhap + moi gio khi may bat, chay an, chay bu luot bi lo).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0dat_lich_may.ps1"
 pause
