@@ -136,6 +136,8 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         return l
     try:
         me = g("me", "/me")
+        if me.status == 401:                                                 # khoá sai / đã thu hồi: lỗi cấu hình, không phải lỗi API
+            return {"loi_cau_hinh": f"{GOI[goi]} bị từ chối (401: khoá sai hoặc đã thu hồi) -> sửa .env / GitHub secret"}
         if isinstance(me.json, dict):
             ghi["me"] = tom_tat_goi(me.json)
             if me.status == 200 and goi_thuc_te(me.json) != goi:              # khoá không đúng gói: không đo, tránh lẫn số liệu

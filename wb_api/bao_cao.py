@@ -140,7 +140,8 @@ def tong_hop_goi(rs: list[dict]) -> dict:
         "ma_la": {"n": len(ma_la), "ma": sorted({f"{l.get('status')} {l.get('code') or ''}".strip() for l in ma_la})},
         "quyen": next((r.get("me") for r in reversed(rs) if r.get("me")), None),
         "loi": dict(loi_ds), "chuoi": chuoi[-24 * 30:],
-        "bo_qua": next((r.get("bo_qua") or r.get("sai_goi") for r in reversed(rs) if r.get("bo_qua") or r.get("sai_goi")), None) if not luot else None,
+        "bo_qua": next((r.get("bo_qua") or r.get("sai_goi") or r.get("loi_cau_hinh") for r in reversed(rs)
+                       if r.get("bo_qua") or r.get("sai_goi") or r.get("loi_cau_hinh")), None) if not luot else None,
     }
 
 
