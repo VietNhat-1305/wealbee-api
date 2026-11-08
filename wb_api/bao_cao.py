@@ -240,6 +240,12 @@ def tao(ghi: bool = True) -> dict:
     chung = [r for r in rs if r.get("goi") == "chung"]
     hl = [h for r in chung for h in r.get("health", [])]
     bao_mat = next((r["bao_mat"] for r in reversed(chung) if r.get("bao_mat")), None)
+    vs = [l for r in chung for l in r.get("vietstock", [])]
+    vietstock = {"n": len(vs), "ok": sum(bool(l.get("dung")) for l in vs),
+                 "theo_ep": {e: _thong_ke([l["ms_tong"] for l in vs if l["ep"] == e and l.get("dung")]) for e in sorted({l["ep"] for l in vs})}}
+    tin = [l for r in chung for l in r.get("tin", [])]
+    tin_tuc = {"n": len(tin), "ok": sum(bool(l.get("dung")) for l in tin),
+               "theo_ep": {e: _thong_ke([l["ms_tong"] for l in tin if l["ep"] == e and l.get("dung")]) for e in sorted({l["ep"] for l in tin})}}
     goi = {}
     for ten in ("free", "dn"):
         cua = [r for r in rs if r.get("goi") == ten]
@@ -252,7 +258,19 @@ def tao(ghi: bool = True) -> dict:
           "nguon": sorted({r["nguon"] for r in rs}),
           "health": {"n": len(hl), "ok": sum(bool(h.get("dung")) for h in hl),
                      "do_tre": _thong_ke([h["ms_tong"] for h in hl if h.get("dung") and not h.get("lanh")])},
-          "bao_mat": bao_mat, "goi": goi, "nhan_xet": nhan_xet(goi)}
+          "bao_mat": bao_mat, "tin_tuc": tin_tuc, "vietstock": vietstock, "goi": goi, "nhan_xet": nhan_xet(goi)}
+    if vietstock["n"]:
+        vs_p50 = (vietstock["theo_ep"].get("vs_gia") or {}).get("p50")
+        wb = goi.get("free", {}).get("tong", {}) if goi.get("free", {}).get("tong", {}).get("so_request") else goi.get("dn", {}).get("tong", {})
+        wb_p50 = (wb.get("do_tre") or {}).get("p50")
+        bc["nhan_xet"].append(f"So với API miễn phí của Vietstock: Vietstock {so_vn(100 * vietstock['ok'] / vietstock['n'], 2)}% thành công, "
+                              f"giá p50 {so_vn(vs_p50)} ms; Wealbee p50 {so_vn(wb_p50)} ms. Vietstock free chỉ có giá và tin (không có BCTC "
+                              "kiểm chứng, nguồn gốc, lịch sử version như Wealbee).")
+    if tin_tuc["n"]:
+        kd = 100 * tin_tuc["ok"] / tin_tuc["n"]
+        cham = [f"{e} p95 {so_vn(v.get('p95'))} ms" for e, v in tin_tuc["theo_ep"].items() if (v.get("p95") or 0) > 2000]
+        bc["nhan_xet"].append(f"API tin tức của app Wealbee (ngoài Data API): {so_vn(kd, 2)}% thành công"
+                              + (f"; chậm: {', '.join(cham)}" if cham else "") + ". Data API chưa có endpoint tin tức.")
     if ghi:
         RA.parent.mkdir(parents=True, exist_ok=True)
         RA.write_text(json.dumps(ma_hoa.goi(bc), separators=(",", ":")), encoding="utf-8")

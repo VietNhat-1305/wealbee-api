@@ -293,6 +293,16 @@ def chay(nguon: str) -> list[dict]:
     gio = int(now.timestamp() // 3600)
     out = []
     chung = {"luc": now.isoformat(timespec="seconds"), "nguon": nguon, "goi": "chung", "health": suc_khoe()}
+    try:                                                             # API tin của app Wealbee (Data API không có tin)
+        from . import tin_tuc
+        chung["tin"] = tin_tuc.do_hieu_suat(VN30[gio % len(VN30)])
+    except Exception as e:  # noqa: BLE001
+        chung["tin"] = [{"ep": "tin_moi", "dung": False, "loi_mang": str(e)[:120], "ms_tong": 0}]
+    try:                                                             # API miễn phí của Vietstock (so với Wealbee Free)
+        from . import vietstock
+        chung["vietstock"] = vietstock.do_hieu_suat(VN30[gio % len(VN30)])
+    except Exception as e:  # noqa: BLE001
+        chung["vietstock"] = [{"ep": "vs_gia", "dung": False, "loi_mang": str(e)[:120], "ms_tong": 0}]
     if now.hour == 2 or os.environ.get("QUET_HANG_NGAY"):
         chung["bao_mat"] = bao_mat(os.environ.get(GOI["free"]) or os.environ.get(GOI["dn"]))
     out.append(chung)

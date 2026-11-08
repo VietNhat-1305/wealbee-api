@@ -71,6 +71,20 @@ function quyen(bc) {
     ${keys.map(k => `<tr><td class="sm">${esc(k)}</td><td class="n sm">${esc(JSON.stringify(q('free')[k] ?? '—'))}</td><td class="n sm">${esc(JSON.stringify(q('dn')[k] ?? '—'))}</td></tr>`).join('')}</table></div>`;
 }
 
+function apiKhac(bc) {
+  const TEN = {vs_gia: 'Vietstock · giá (tvnew/history)', vs_tin_rss: 'Vietstock · tin RSS', tin_moi: 'Wealbee app · tin mới (insights/for-you)',
+               tin_theo_ma: 'Wealbee app · tin theo mã (symbols/{mã}/insights)'};
+  const dong = (nhom) => Object.entries(nhom?.theo_ep || {}).map(([e, t]) => `<tr><td class="sm">${esc(TEN[e] || e)}</td>
+    <td class="n">${t.n ? `${so(t.p50)} / ${so(t.p95)} ms` : '—'}</td></tr>`).join('');
+  const kd = n => n?.n ? `${so(100 * n.ok / n.n, 2)}% thành công (${so(n.n)} lượt)` : 'chưa có dữ liệu';
+  const fr = bc.goi.free.tong.so_request ? bc.goi.free.tong : bc.goi.dn.tong;
+  return `<div class="card"><h2>So sánh với API miễn phí khác</h2><div class="sm mut" style="margin-bottom:8px">Wealbee Data API (p50 / p95 các endpoint):
+      <b>${fr.do_tre.n ? `${so(fr.do_tre.p50)} / ${so(fr.do_tre.p95)} ms` : '—'}</b></div>
+    <table><tr><th>API</th><th class="n">p50 / p95</th></tr>${dong(bc.vietstock)}${dong(bc.tin_tuc)}</table>
+    <div class="xs mut2" style="margin-top:8px">Vietstock: ${kd(bc.vietstock)} · API tin Wealbee: ${kd(bc.tin_tuc)}. Vietstock miễn phí chỉ có giá và tin RSS
+    (API dữ liệu chính thức DataFeed phải mua); Data API của Wealbee chưa có endpoint tin tức, tin lấy từ API của app.</div></div>`;
+}
+
 function baoMat(bc) {
   const b = bc.bao_mat; if (!b) return '';
   const y = (v, t) => `<tr><td class="sm">${t}</td><td class="n"><span class="tag ${v ? 'dat' : 'chua_dat'}">${v ? 'Có' : 'Không'}</span></td></tr>`;
@@ -94,7 +108,7 @@ async function main() {
       <div class="card"><h3>Health check (không cần khoá)</h3><div class="big">${bc.health.n ? so(100 * bc.health.ok / bc.health.n, 2) : '—'}<span class="mut" style="font-size:18px">%</span></div>
       <div class="sm mut">${so(bc.health.n)} lượt · p50 ${so(bc.health.do_tre.p50)} ms · p95 ${so(bc.health.do_tre.p95)} ms</div></div></div>
     <div class="card" style="margin-top:16px"><h2>Nhận xét chính</h2><ul>${bc.nhan_xet.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
-    <div class="grid" style="margin-top:16px">${bangTieuChi(bc)}${bieuDoTre(bc)}${chiTiet(bc)}${bangEp(bc)}<div class="grid g2">${quyen(bc)}${baoMat(bc)}</div>
+    <div class="grid" style="margin-top:16px">${bangTieuChi(bc)}${bieuDoTre(bc)}${chiTiet(bc)}${bangEp(bc)}<div class="grid g2">${quyen(bc)}${baoMat(bc)}</div>${apiKhac(bc)}
     <div class="card sm mut"><h2>Phương pháp</h2><ul>
       <li>Mỗi giờ: health check + 13 bài đo cho mỗi gói (me, companies, company, statement mới nhất, danh sách 2 trang, statement đầy đủ, versions, filings, events, lỗi 400 / 401 / 404). Bộ đo tự giữ nhịp dưới giới hạn tốc độ.</li>
       <li>Mỗi ngày 1 lần: bắn dồn để kiểm giới hạn tốc độ (lúc nào bị 429, có Retry-After không, chờ xong có gọi lại được không) và kiểm bảo mật (TLS, HSTS, http → https, khoá qua URL).</li>

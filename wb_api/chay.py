@@ -58,6 +58,16 @@ def main(argv=None) -> int:
     if a.dong_bo or a.nguon == "github":
         for d in dong_bo.chay():
             print("đồng bộ", json.dumps(d, ensure_ascii=False))
+        from . import tin_tuc
+        try:
+            print("tin tức", json.dumps(tin_tuc.cap_nhat(), ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001 - tin lỗi không chặn báo cáo
+            print("tin tức lỗi:", str(e)[:200])
+        from . import vietstock
+        try:
+            print("vietstock", json.dumps(vietstock.chay(), ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001
+            print("vietstock lỗi:", str(e)[:200])
     if not a.khong_bao_cao:
         bc = bao_cao.tao()
         print("báo cáo:", {k: v["diem"] for k, v in bc["goi"].items()}, "| lượt quét:", bc["so_luot"])

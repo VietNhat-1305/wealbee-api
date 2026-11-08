@@ -74,12 +74,45 @@ function ve() {
     <div class="split"><div class="card"><div class="grid" style="grid-template-columns:1fr auto;gap:10px;margin-bottom:12px">
         <input class="search" id="q" placeholder="Tìm mã hoặc tên công ty (gõ không dấu được)" value="${esc(D.loc)}">
         <select id="ng"><option value="">Mọi ngành</option>${nganh.map(n => `<option value="${esc(n)}" ${D.nganh === n ? 'selected' : ''}>${esc(NGANH[n] || n)}</option>`).join('')}</select></div>
+      <div class="xs mut2" style="margin:-4px 0 6px">DT, LNST: quý gần nhất, tỷ đồng${CH.goi === 'dn' ? ' · Điểm: điểm sức khoẻ tài chính /10' : ''}</div>
       <div class="list" id="ds"></div></div>
-      <div id="ct">${D.chon ? '' : '<div class="card empty">Chọn một mã bên trái để xem báo cáo tài chính, biểu đồ giá và nguồn gốc số liệu.</div>'}</div></div>`;
+      <div id="ct"></div></div>`;
   $('#q').oninput = e => { D.loc = e.target.value; veDs(); };
   $('#ng').onchange = e => { D.nganh = e.target.value; veDs(); };
   veDs();
-  if (D.chon) veCt(D.chon);
+  if (D.chon) veCt(D.chon); else veTinChung();
+}
+
+// ---- tin tức: Wealbee (app, mục Đề xuất) cho cả 2 web; Vietstock (RSS miễn phí) thêm cho web bản Free
+const taiJson = u => fetch(u, {cache: 'no-store'}).then(r => r.ok ? r.json() : null).catch(() => null);
+const SAC = {positive: ['Tích cực', 'up'], negative: ['Tiêu cực', 'down'], neutral: ['Trung lập', 'mut']};
+function theTin(x) {
+  const s = SAC[x.sac_thai];
+  const nhan = [x.loai || (x.muc || []).join(', '), x.nganh, s ? `<span class="${s[1]}">${s[0]}</span>` : '', x.so_nguon ? `${x.so_nguon} nguồn` : '']
+    .filter(Boolean).join(' · ');
+  return `<div class="tin">${x.anh ? `<img src="${esc(x.anh)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : '<div></div>'}
+    <div><a class="t" href="${esc(x.link)}" target="_blank" rel="noopener">${esc((x.tieu_de || '').replace(/\*\*/g, ''))}</a>
+    <div class="sm mut">${esc((x.tom_tat || '').replace(/\*\*/g, ''))}</div>
+    <div class="xs mut2">${tg(x.luc)}${nhan ? ' · ' + nhan : ''}${(x.ma || []).length ? ' · ' + x.ma.slice(0, 6).map(m => `<a href="#${esc(m)}">${esc(m)}</a>`).join(' ') : ''}</div></div></div>`;
+}
+const NGUON_TIN = () => [['wealbee', 'Tin Wealbee', '../tin/moi.json', m => `../tin/ma/${m}.json`]]
+  .concat(CH.vietstock ? [['vietstock', 'Tin Vietstock', '../vietstock/tin_moi.json', m => `../vietstock/tin_ma/${m}.json`]] : []);
+async function veTinChung(chon) {
+  const ng = NGUON_TIN(), k = chon || ng[0][0], n = ng.find(x => x[0] === k);
+  $('#ct').innerHTML = `<div class="card"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <h2 style="margin:0">Tin mới</h2><div class="tabs">${ng.map(x => `<button class="tab ${x[0] === k ? 'on' : ''}" onclick="veTinChung('${x[0]}')">${x[1]}</button>`).join('')}</div>
+      <div class="sp"></div><span class="xs mut2">Chọn một mã bên trái để xem BCTC</span></div><div id="tinds" class="mut sm">Đang tải…</div></div>`;
+  const j = await taiJson(n[2]);
+  if (D.chon) return;
+  $('#tinds').innerHTML = j?.ds?.length ? j.ds.slice(0, 40).map(theTin).join('') : '<div class="empty">Chưa có tin.</div>';
+}
+async function veTinMa(m) {
+  const ng = NGUON_TIN(), ds = [];
+  for (const [ten, nhan, , f] of ng) { const j = await taiJson(f(m)); for (const x of (j?.ds || [])) ds.push({...x, _nguon: nhan}); }
+  if (D.chon !== m || !$('#tinma')) return;
+  ds.sort((a, b) => (b.luc || '').localeCompare(a.luc || ''));
+  $('#tinma').innerHTML = ds.length ? ds.slice(0, 15).map(x => theTin({...x, loai: (x.loai || (x.muc || []).join(', ')) + ` · ${x._nguon}`})).join('')
+    : `<div class="mut sm">Chưa có tin nào nhắc tới ${esc(m)} trong 30 ngày gần đây${CH.vietstock ? ' (Wealbee, Vietstock)' : ''}.</div>`;
 }
 
 function veDs() {
@@ -87,7 +120,7 @@ function veDs() {
   const ds = Object.entries(D.idx.cong_ty || {}).filter(([m, v]) => (!D.nganh || v.nganh === D.nganh) &&
     (!q || khoBo(m + ' ' + (D.cty[m]?.name || '')).includes(q))).sort((a, b) => a[0].localeCompare(b[0]));
   const co = ds.some(([, v]) => v.diem != null);
-  $('#ds').innerHTML = ds.length ? `<table><tr><th>Mã</th><th>Kỳ</th><th class="n">Doanh thu<br><span class="xs">tỷ đồng</span></th><th class="n">LNST<br><span class="xs">tỷ đồng</span></th>${co ? '<th class="n">Điểm</th>' : ''}<th></th></tr>
+  $('#ds').innerHTML = ds.length ? `<table><tr><th>Mã</th><th>Kỳ</th><th class="n" title="tỷ đồng">DT</th><th class="n" title="tỷ đồng">LNST</th>${co ? '<th class="n">Điểm</th>' : ''}<th></th></tr>
     ${ds.slice(0, 800).map(([m, v]) => `<tr class="row" onclick="location.hash='${m}'"><td><b>${m}</b><div class="xs mut2">${esc((D.cty[m]?.name || '').slice(0, 34))}</div></td>
       <td class="sm">${esc(v.ky)}</td><td class="n">${so(v.dt / 1e9)}</td><td class="n ${v.ln < 0 ? 'down' : ''}">${so(v.ln / 1e9)}</td>
       ${co ? `<td class="n">${v.diem == null ? '—' : `<b>${so(v.diem)}</b><span class="xs mut2">/${v.diem_max || 10}</span>`}</td>` : ''}<td><span class="tag ${esc(v.tt)}">${esc(v.tt === 'verified' ? '✓' : v.tt === 'needs_review' ? 'soát' : v.tt || '')}</span></td></tr>`).join('')}</table>`
@@ -131,7 +164,8 @@ function veCt(m) {
       ${sk != null ? `<div class="sm" style="margin-top:4px">Điểm sức khoẻ tài chính: <b style="font-size:18px">${so(typeof sk === 'object' ? sk.value : sk)}</b>/${typeof sk === 'object' ? sk.max || 10 : 10}${typeof sk === 'object' && sk.missing_points ? ` <span class="xs mut2">(thiếu ${sk.missing_points} tiêu chí)</span>` : ''}</div>` :
         `<div class="xs mut2" style="margin-top:4px">${CH.goi === 'free' ? 'Gói Free không có điểm sức khoẻ' : 'Chưa có điểm sức khoẻ'}</div>`}</div></div></div>
     <div class="grid g4">${kpi('Doanh thu quý', dt, dtS)}${kpi('LNST quý', ln, lnS)}${kpi('Tổng tài sản', gt(bs.total_assets), ssanh(bs.total_assets))}</div>
-    <div class="card"><h3>Giá cổ phiếu 12 tháng · nguồn VNDirect (API miễn phí)</h3><div id="gia" class="empty sm">Đang tải giá…</div></div>
+    <div class="card"><h3>Giá cổ phiếu 12 tháng · nguồn <span id="nguon_gia">${CH.vietstock ? 'Vietstock' : 'VNDirect'}</span> (API miễn phí)</h3><div id="gia" class="empty sm">Đang tải giá…</div></div>
+    <div class="card"><h3>Tin tức về ${m} · ${CH.vietstock ? 'Wealbee + Vietstock' : 'Wealbee'}</h3><div id="tinma" class="mut sm">Đang tải tin…</div></div>
     <div class="card"><h3>Doanh thu và lợi nhuận theo quý</h3>${bieuDoCot(kys, [
       {ten: 'Doanh thu', mau: '#4f8cff', gt: kys.map(k => gt((du.ky[k].income_statement || {}).revenue))},
       {ten: 'LNST', mau: '#22c55e', gt: kys.map(k => gt((du.ky[k].income_statement || {}).net_profit))}])}</div>
@@ -144,13 +178,15 @@ function veCt(m) {
         .map(([k, t]) => `<div class="mut">${t}: ${tg(ng[k])}</div>`).join('')}
       ${ng.detected_at && ng.first_published_at ? `<div>Độ trễ thấy file → có số: <b>${so((new Date(ng.first_published_at) - new Date(ng.detected_at)) / 36e5, 1)} giờ</b></div>` : ''}
       ${st.review_reasons?.length ? `<div style="color:var(--warn)">Cần soát: ${esc(st.review_reasons.join('; '))}</div>` : ''}</div></div>`;
-  veGia(m);
+  veGia(m); veTinMa(m);
 }
 
 async function veGia(m) {
   const to = Math.floor(Date.now() / 1000), fr = to - 366 * 86400;
   try {
-    const j = await (await fetch(`https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol=${m}&from=${fr}&to=${to}`)).json();
+    let j = CH.vietstock ? await taiJson(`../vietstock/gia/${m}.json`) : null;
+    if (!j?.t?.length) { j = await (await fetch(`https://dchart-api.vndirect.com.vn/dchart/history?resolution=D&symbol=${m}&from=${fr}&to=${to}`)).json();
+      if ($('#nguon_gia')) $('#nguon_gia').textContent = 'VNDirect'; }
     if (!j.t?.length) throw 0;
     const k = Math.max(...j.c) < 1000 ? 1000 : 1, c = j.c.map(v => v * k), dau = c[0], cuoi = c[c.length - 1], d = pct(cuoi, dau);
     if (D.chon !== m) return;
@@ -158,7 +194,7 @@ async function veGia(m) {
     $('#gia').innerHTML = `<div style="display:flex;gap:16px;align-items:baseline;flex-wrap:wrap"><div class="big">${so(cuoi)}</div>
       <div class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${so(Math.abs(d), 1)}% trong 12 tháng</div><div class="sm mut2">đồng · phiên ${new Date(j.t[j.t.length - 1] * 1000).toLocaleDateString('vi-VN')}</div></div>
       ${bieuDoDuong([{ten: m, mau: '#7c5cff', diem: j.t.map((t, i) => [t * 1000, c[i] / 1000])}], {donVi: 'k'})}`;
-  } catch { if (D.chon === m) $('#gia').innerHTML = 'Không lấy được giá từ VNDirect.'; }
+  } catch { if (D.chon === m) $('#gia').innerHTML = 'Không lấy được giá.'; }
 }
 
 main();
