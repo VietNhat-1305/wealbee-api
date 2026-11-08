@@ -273,6 +273,11 @@ def tao(ghi: bool = True) -> dict:
         bc["nhan_xet"].append(f"API tin tức của app Wealbee (ngoài Data API): {so_vn(kd, 2)}% thành công"
                               + (f"; chậm: {', '.join(cham)}" if cham else "") + ". Data API chưa có endpoint tin tức.")
     if ghi:
+        from . import thay_doi
+        try:
+            bc["thay_doi_moi"] = thay_doi.cap_nhat(rs, bc)            # có cải thiện / tệ đi -> thêm 1 bản báo cáo thay đổi
+        except Exception as e:  # noqa: BLE001 - lỗi phần so sánh không chặn báo cáo chính
+            bc["thay_doi_loi"] = str(e)[:200]
         RA.parent.mkdir(parents=True, exist_ok=True)
         RA.write_text(json.dumps(ma_hoa.goi(bc), separators=(",", ":")), encoding="utf-8")
     return bc

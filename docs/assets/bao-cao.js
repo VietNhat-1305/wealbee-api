@@ -95,11 +95,28 @@ function baoMat(bc) {
     ${b.khoa_qua_query_bi_tu_choi != null ? y(b.khoa_qua_query_bi_tu_choi, 'Từ chối khoá gửi qua URL (query string)') : ''}</table></div>`;
 }
 
+async function thayDoi(mk) {
+  const r = await fetch('thay_doi.enc', {cache: 'no-store'});
+  if (!r.ok) return '<div class="card"><h2>Báo cáo thay đổi</h2><div class="sm mut">Chưa có thay đổi đáng kể nào kể từ khi bắt đầu theo dõi. Mỗi lượt quét, hệ thống so với các lượt trước; có cải thiện hoặc tệ đi rõ rệt sẽ tự viết báo cáo mới ở đây.</div></div>';
+  let ds = []; try { ds = await moGoi(await r.json(), mk); } catch {}
+  if (!ds.length) return '';
+  const mot = (b, mo) => `<details ${mo ? 'open' : ''} style="border-top:1px solid var(--line);padding:10px 0"><summary style="cursor:pointer">
+      <span class="tag ${b.te_di.length ? (b.cai_thien.length ? 'kha' : 'chua_dat') : 'dat'}">${b.te_di.length ? (b.cai_thien.length ? 'Lẫn lộn' : 'Tệ đi') : 'Cải thiện'}</span>
+      <b>${tg(b.luc)}</b> <span class="sm mut">${esc(b.tieu_de)}</span></summary>
+      ${b.cai_thien.length ? `<div class="sm" style="margin-top:8px"><b class="up">▲ Cải thiện</b><ul>${b.cai_thien.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      ${b.te_di.length ? `<div class="sm"><b class="down">▼ Tệ đi</b><ul>${b.te_di.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      <div class="xs mut2">Điểm lúc đó: ${Object.entries(b.diem_hien_tai || {}).map(([g, d]) => `${TEN_GOI[g]} ${d == null ? '—' : so(d, 1)}`).join(' · ')}</div></details>`;
+  return `<div class="card"><div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Báo cáo thay đổi</h2>
+    <span class="pill">${ds.length} bản</span><div class="sp"></div><span class="xs mut2">tự viết khi có cải thiện hoặc tệ đi rõ rệt</span></div>
+    ${ds.slice(0, 30).map((b, i) => mot(b, i === 0)).join('')}</div>`;
+}
+
 async function main() {
   const khung = $('#app');
   const r = await fetch('bao_cao.enc', {cache: 'no-store'});
   if (!r.ok) { khung.innerHTML = '<div class="card empty">Chưa có báo cáo: bộ quét chưa chạy lượt nào.</div>'; return; }
-  const {du_lieu: bc} = await congMatKhau('bao_cao.enc', khung, 'Báo cáo hiệu suất Wealbee API');
+  const {du_lieu: bc, mk} = await congMatKhau('bao_cao.enc', khung, 'Báo cáo hiệu suất Wealbee API');
+  const tdHtml = await thayDoi(mk);
   khung.innerHTML = `<section class="hero"><span class="pill">Cập nhật ${tg(bc.tao_luc)}</span>
       <h1 style="margin-top:12px">Đánh giá hiệu suất Wealbee Data API</h1>
       <p class="mut">Quét tự động mỗi giờ từ ${bc.nguon.map(n => TEN_NGUON[n] || n).join(' và ') || '—'}, so sánh gói Free với gói Doanh nghiệp theo các tiêu chí của một API dữ liệu cho doanh nghiệp.
@@ -107,6 +124,7 @@ async function main() {
     <div class="grid g3">${oDiem('free', bc.goi.free)}${oDiem('dn', bc.goi.dn)}
       <div class="card"><h3>Health check (không cần khoá)</h3><div class="big">${bc.health.n ? so(100 * bc.health.ok / bc.health.n, 2) : '—'}<span class="mut" style="font-size:18px">%</span></div>
       <div class="sm mut">${so(bc.health.n)} lượt · p50 ${so(bc.health.do_tre.p50)} ms · p95 ${so(bc.health.do_tre.p95)} ms</div></div></div>
+    <div style="margin-top:16px">${tdHtml}</div>
     <div class="card" style="margin-top:16px"><h2>Nhận xét chính</h2><ul>${bc.nhan_xet.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
     <div class="grid" style="margin-top:16px">${bangTieuChi(bc)}${bieuDoTre(bc)}${chiTiet(bc)}${bangEp(bc)}<div class="grid g2">${quyen(bc)}${baoMat(bc)}</div>${apiKhac(bc)}
     <div class="card sm mut"><h2>Phương pháp</h2><ul>

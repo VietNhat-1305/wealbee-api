@@ -71,6 +71,8 @@ def main(argv=None) -> int:
     if not a.khong_bao_cao:
         bc = bao_cao.tao()
         print("báo cáo:", {k: v["diem"] for k, v in bc["goi"].items()}, "| lượt quét:", bc["so_luot"])
+        if bc.get("thay_doi_moi"):
+            print("BÁO CÁO THAY ĐỔI MỚI:", bc["thay_doi_moi"]["tieu_de"])
     return 0
 
 
