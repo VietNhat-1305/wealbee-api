@@ -1,7 +1,7 @@
 {
- "ngay_cong_ty": "2026-11-08",
+ "ngay_cong_ty": "2026-11-09",
  "bam": {
-  "cong_ty": "d7421dd0609ad44602cf9c16df851b20387812b5e61a3801c9ebc8cc79161ef2",
+  "cong_ty": "46ccac0f8b969ba92d66df2d790d2b243c09edf9c383444bb6ee63754d147acd",
   "ma/AAA": "887cdfbade2a3717fcdcf7de4027b504cd4b2f0b5661111876eea9210434ded7",
   "ma/AAM": "074e9c0cc0444eacc0cc3cfa3e94197899012dd681940ffb56f41148818ed49c",
   "ma/AAN": "a448e6d52f9e6e4285773e1eb1fa61d27dd4302fcd0def18015092a50379343a",
@@ -1081,7 +1081,7 @@
   "index": "e0604575c421480329bc84084e47ca718612e4c4894cc9326776abfa336e0ec3"
  },
  "cursor": null,
- "updated_since": "2026-11-08T22:49:57+00:00",
+ "updated_since": "2026-11-09T02:38:24+00:00",
  "dang_tu": null,
- "lan_cuoi": "2026-11-08T22:49:57+00:00"
+ "lan_cuoi": "2026-11-09T02:38:24+00:00"
 }
