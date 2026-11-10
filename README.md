@@ -10,6 +10,20 @@
 - Báo cáo so sánh thêm hiệu suất API Wealbee với API miễn phí của Vietstock và API tin của app Wealbee.
 - Quyền gói **tính theo tài khoản**: nâng tài khoản lên hợp đồng thì mọi khoá cũ của tài khoản đó cũng thành gói Doanh nghiệp. Bộ quét tự kiểm gói của từng khoá qua `/v1/me` và bỏ qua khoá sai gói để số liệu 2 gói không lẫn.
 
+## Trợ lý AI phân tích đầu tư (Gemini, miễn phí)
+Nút **✦ Hỏi AI** trên 2 web tra cứu, và nút **✦ AI phân tích <MÃ>** ở trang từng mã. Trợ lý dùng Gemini API (gói miễn phí của Google) và chạy hẳn trên trình duyệt (`docs/assets/ai.js`), không cần máy chủ. Gemini tự gọi các công cụ sau để lấy dữ liệu:
+- `bao_cao_tai_chinh`: BCTC Wealbee của web đang xem, gồm các quý gần nhất và tỷ lệ tính sẵn (biên lợi nhuận, tăng trưởng, ROE/ROA năm hoá, nợ/VCSH, LCTT/LNST)
+- `tin_tuc`: tin Wealbee theo mã hoặc toàn thị trường (web Free có thêm Vietstock)
+- `gia_co_phieu`: giá, biến động 1 tuần đến 12 tháng, đỉnh/đáy 52 tuần (Vietstock hoặc VNDirect)
+- `loc_co_phieu`: lọc và xếp hạng theo điểm sức khoẻ, doanh thu, LNST, biên LNST
+- `tim_cong_ty`: tìm mã theo tên
+
+Khoá Gemini lấy ở https://aistudio.google.com/apikey, ghi vào `.env` (`GEMINI_API_KEY`), rồi chạy `python -m wb_api.khoa_ai`. Script kiểm khoá, thử model và ghi `docs/ai/khoa.json` đã mã hoá bằng `MAT_KHAU_NOI_BO`. Sau đó commit và push.
+- Trên web Free: sau khi nhập mật khẩu nhóm, AI tự dùng khoá nhóm.
+- Trên web Doanh nghiệp: nhập mật khẩu nhóm trong khung AI. Người ngoài nhóm có thể dán khoá Gemini riêng; khoá này chỉ lưu trong trình duyệt của họ.
+- Model được chọn tự động: Flash mới nhất, hết lượt miễn phí thì chuyển sang Flash-Lite. Có thể chọn tay ở nút ⚙.
+- Nên giới hạn khoá theo website (Google Cloud Console → Credentials → Website restrictions: `https://vietnhat-1305.github.io/*`).
+
 ## Chạy tự động
 | Ở đâu | Khi nào | Việc |
 |---|---|---|

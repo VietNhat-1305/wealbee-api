@@ -41,6 +41,7 @@ async function main() {
   for (const c of (ct?.ds || [])) D.cty[c.ticker || c.code || c.symbol] = c;
   D.tt = tt;
   ve();
+  window.AI?.gan();                                // trợ lý AI (ai.js): nút nổi góc phải
   window.onhashchange = () => chonMa(location.hash.slice(1));
   if (location.hash.length > 1) chonMa(location.hash.slice(1));
 }
@@ -157,7 +158,7 @@ function veCt(m) {
     ${d == null ? '' : `<div class="sm ${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '▲' : '▼'} ${so(Math.abs(d), 1)}% so cùng kỳ</div>`}</div>`; };
   $('#ct').innerHTML = `<div class="grid">
     <div class="card"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:200px">
-      <h1>${m}</h1><div class="mut">${esc(c.name || '')}</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><h1>${m}</h1>${window.AI ? `<button class="btn" style="padding:8px 14px;font-size:13.5px" onclick="AI.phanTich('${m}')">✦ AI phân tích ${m}</button>` : ''}</div><div class="mut">${esc(c.name || '')}</div>
       <div class="sm mut2">${esc(c.exchange || '')} · ${esc(NGANH[st.industry_type] || st.industry_type || '')} · ${esc(st.period_label || kys[kys.length - 1])} · ${esc(st.scope === 'consolidated' ? 'hợp nhất' : st.scope === 'single_entity' ? 'riêng' : st.scope || '')}</div></div>
       <div style="text-align:right"><span class="tag ${esc(st.status)}">${esc(st.status || '')}</span>
       <div class="sm mut" style="margin-top:6px">Phép kiểm: <b>${st.kiem?.dat ?? '—'}/${st.kiem?.tong ?? '—'}</b> đạt${st.kiem?.loi?.length ? ` · lỗi: ${esc(st.kiem.loi.join(', '))}` : ''}</div>
