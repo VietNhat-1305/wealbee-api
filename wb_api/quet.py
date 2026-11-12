@@ -261,9 +261,9 @@ def ban_don(goi: str, khoa: str) -> dict:
     try:
         dau = wb.goi("burst", "/me")
         q = dau.rl.get("q") or 30
-        toi_da = min(q + 5, 130)                                       # vượt giới hạn vài request để thấy 429 thật
+        toi_da = min(int(q * 1.4) + 10, 220)                           # hạn mức kiểu thùng token (hồi ~q/60 lượt/giây): bắn quá q đủ để thấy 429
         lu.append(dau)
-        wb.nhip = 0
+        wb.nhip, wb.tu_giu_nhip = 0, False             # bắn liên tục, không tự giãn nhịp (trước 13/11 bị giãn nên không bao giờ chạm 429)
         t0 = time.perf_counter()
         while len(lu) < toi_da:
             l = wb.goi("burst", "/me")
@@ -345,7 +345,7 @@ def chay(nguon: str) -> list[dict]:
                 continue
             if now.hour == 2 or os.environ.get("QUET_HANG_NGAY") or not os.environ.get("CO_DO_PHU"):
                 rec["phu"] = do_phu(khoa, goi)
-            if (now.hour == 2 or os.environ.get("QUET_HANG_NGAY")) and nguon == "github":
+            if (now.hour == 2 and nguon == "github") or os.environ.get("QUET_HANG_NGAY"):
                 time.sleep(61)                                               # trả lại hạn mức phút trước khi bắn dồn
                 rec["ban_don"] = ban_don(goi, khoa)
         except Exception as e:  # noqa: BLE001 - 1 gói lỗi không dừng gói kia

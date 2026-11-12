@@ -38,7 +38,8 @@ function hero(bc) {
   return `<section class="hero"><span class="pill">Cập nhật ${tg(bc.tao_luc)}</span>
     <h1 style="margin-top:12px">Đánh giá Wealbee Data API</h1>
     <p class="mut">Đo tự động mỗi giờ từ ${bc.nguon.map(n => TEN_NGUON[n] || n).join(' và ')}, chấm theo 11 tiêu chí của một API dữ liệu
-    cho doanh nghiệp. Số liệu từ ${tg(bc.tu)} đến ${tg(bc.den)}.</p></section>`;
+    cho doanh nghiệp. Số liệu từ ${tg(bc.tu)} đến ${tg(bc.den)}.${bc.cap_nhat_api?.dung_de_cham ? ` Phần vận hành (sẵn sàng, độ trễ, lỗi) chấm trên
+    số đo sau bản cập nhật API đêm 11/11 để phản ánh API hiện tại.` : ''}</p></section>`;
 }
 
 function ketLuan(bc) {
@@ -90,7 +91,7 @@ function bangTieuChi(bc) {
 }
 
 function bieuDo(bc) {
-  const tn = bc.goi.dn.theo_nguon || {};
+  const tn = bc.goi.dn.theo_nguon_ca_ky || bc.goi.dn.theo_nguon || {};
   const tre = Object.entries(tn).map(([n, t]) => ({ten: `Đo từ ${TEN_NGUON[n] || n}`, mau: MAU_NGUON[n] || '#4f8cff',
     diem: (t.chuoi || []).map(c => [new Date(c.luc).getTime(), c.p50])}));
   const kd = Object.entries(tn).map(([n, t]) => ({ten: `Đo từ ${TEN_NGUON[n] || n}`, mau: MAU_NGUON[n] || '#4f8cff',
@@ -105,11 +106,32 @@ function bangEp(bc) {
   const eps = [...new Set(ng.flatMap(n => Object.keys(tn[n].theo_ep || {})))];
   if (!eps.length) return '';
   const o = (n, e) => { const t = tn[n].theo_ep?.[e]; return t?.n ? `${so(t.p50)} / <b class="${t.p95 > 1000 ? 'down' : ''}">${so(t.p95)}</b>` : '—'; };
-  return the('Độ trễ theo endpoint (trung vị / p95, ms)', `<div style="overflow-x:auto"><table>
+  return the(`Độ trễ theo endpoint (trung vị / p95, ms)${bc.cap_nhat_api?.dung_de_cham ? ' · sau bản cập nhật API' : ''}`, `<div style="overflow-x:auto"><table>
     <tr><th>Endpoint</th>${ng.map(n => `<th class="n">Đo từ ${TEN_NGUON[n] || n}</th>`).join('')}</tr>
     ${eps.map(e => `<tr><td class="sm">${esc(TEN_EP[e] || e)} <span class="xs mut2">${esc(e)}</span></td>${ng.map(n => `<td class="n">${o(n, e)}</td>`).join('')}</tr>`).join('')}
     </table></div><div class="xs mut2" style="margin-top:6px">Không tính lượt đầu của mỗi kết nối (có bắt tay TLS). p95 trên 1 giây tô đỏ.
     Đo từ Mỹ chậm hơn vì máy chủ Wealbee đặt ở châu Á.</div>`);
+}
+
+function capNhat(bc) {
+  const c = bc.cap_nhat_api, a = c?.truoc, b = c?.sau;
+  if (!b?.vn?.luot || !a?.vn?.luot) return '';
+  const thay = (x, y, giam = true) => { if (x == null || y == null || !x) return '<td></td>';
+    const d = (y - x) / Math.abs(x) * 100, tot = giam ? d < -5 : d > 5, xau = giam ? d > 5 : d < -5;
+    return `<td class="n ${tot ? 'up' : xau ? 'down' : 'mut'}">${d > 0 ? '+' : ''}${so(d, 0)}%</td>`; };
+  const ms = (t, x, y) => `<tr><td class="sm">${t}</td><td class="n">${so(x)} ms</td><td class="n"><b>${so(y)} ms</b></td>${thay(x, y)}</tr>`;
+  const ty = (t, x, y, giam) => `<tr><td class="sm">${t}</td><td class="n">${pt(x)}%</td><td class="n"><b>${pt(y)}%</b></td><td class="n mut">${x != null && y != null ? (Math.abs(y - x) < 0.005 ? 'không đổi' : `${y - x > 0 ? '+' : ''}${so(y - x, 2)} điểm`) : ''}</td></tr>`;
+  const eps = Object.keys(a.ep_vn || {}).filter(e => b.ep_vn?.[e] && a.ep_vn[e]).sort((e, f) => b.ep_vn[e] / a.ep_vn[e] - b.ep_vn[f] / a.ep_vn[f]).slice(0, 4);
+  return the('Trước và sau bản cập nhật API (mốc 00:00 12/11)', `<div style="overflow-x:auto"><table>
+    <tr><th>Chỉ số</th><th class="n">48 giờ trước (${so(a.vn.luot + a.my.luot)} lượt)</th><th class="n">Sau (${so(b.vn.luot + b.my.luot)} lượt)</th><th class="n">Thay đổi</th></tr>
+    <tr><td colspan="4" class="xs mut2" style="padding-top:14px">ĐO TỪ VIỆT NAM</td></tr>
+    ${ms('Trung vị', a.vn.p50, b.vn.p50)}${ms('p95 (95% request xong trong)', a.vn.p95, b.vn.p95)}${ms('Request chậm nhất', a.vn.max, b.vn.max)}
+    ${ty('Request chậm trên 1 giây', a.vn.tren_1s, b.vn.tren_1s)}${ty('Request thành công', a.vn.kha_dung, b.vn.kha_dung)}
+    ${a.my.luot && b.my.luot ? `<tr><td colspan="4" class="xs mut2" style="padding-top:14px">ĐO TỪ MỸ</td></tr>${ms('Trung vị', a.my.p50, b.my.p50)}${ms('p95', a.my.p95, b.my.p95)}` : ''}
+    ${eps.length ? `<tr><td colspan="4" class="xs mut2" style="padding-top:14px">ENDPOINT THAY ĐỔI NHIỀU NHẤT (p95, ĐO TỪ VIỆT NAM)</td></tr>
+      ${eps.map(e => ms(TEN_EP[e] || e, a.ep_vn[e], b.ep_vn[e])).join('')}` : ''}</table></div>
+    <div class="xs mut2" style="margin-top:8px">So 48 giờ ngay trước mốc với khoảng sau mốc, để tách tác động của bản cập nhật. Lỗi do máy đo mất mạng không tính ở cả hai khoảng.
+    Số lượt sau bản cập nhật còn ít, cần theo dõi thêm vài ngày.</div>`);
 }
 
 function duLieu(bc) {
@@ -228,7 +250,7 @@ async function main() {
   if (bc.phien_ban !== 2) { khung.innerHTML = '<div class="card empty">Báo cáo đang được dựng lại theo cách tính mới, quay lại sau ít phút.</div>'; return; }
   const td = await thayDoi(mk);
   khung.innerHTML = `${hero(bc)}${ketLuan(bc)}${kpis(bc)}
-    <div class="grid" style="margin-top:16px">${vanDe(bc)}${manhVaSua(bc)}${bangTieuChi(bc)}${bieuDo(bc)}${bangEp(bc)}${duLieu(bc)}
+    <div class="grid" style="margin-top:16px">${vanDe(bc)}${manhVaSua(bc)}${bangTieuChi(bc)}${capNhat(bc)}${bieuDo(bc)}${bangEp(bc)}${duLieu(bc)}
       ${tinTuc(bc)}${rlBaoMat(bc)}${goiFree(bc)}${apiKhac(bc)}${td}${phuongPhap(bc)}</div>`;
 }
 main();

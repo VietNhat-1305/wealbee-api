@@ -64,6 +64,7 @@ class WB:
         self.http = httpx.Client(base_url=BASE, timeout=httpx.Timeout(30.0, connect=10.0), headers={"User-Agent": UA},
                                  follow_redirects=False)
         self.nhip = nhip_toi_thieu      # giây tối thiểu giữa 2 lượt gọi
+        self.tu_giu_nhip = True         # tự giãn nhịp theo header RateLimit; bài bắn dồn tắt đi để thật sự vượt giới hạn
         self._lan_cuoi = 0.0
         self._da_ket_noi = False
 
@@ -103,7 +104,7 @@ class WB:
                 l.code = l.json.get("code")
             r.close()
             q, w = l.rl.get("q"), l.rl.get("w")
-            if q and w:                                    # giữ nhịp an toàn ~80% giới hạn
+            if q and w and self.tu_giu_nhip:               # giữ nhịp an toàn ~80% giới hạn
                 self.nhip = max(self.nhip, w / q / 0.8)
         except httpx.HTTPError as e:
             l.ms_tong = (time.perf_counter() - t0) * 1000

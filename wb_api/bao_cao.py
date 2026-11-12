@@ -26,6 +26,7 @@ Tiêu chí (ngưỡng theo thông lệ API dữ liệu tài chính cho doanh ngh
 from __future__ import annotations
 
 import json
+import os
 import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -40,6 +41,8 @@ WEB_DN = ROOT / "docs" / "doanh-nghiep" / "data"
 LOI_CO_Y = ("err_400", "err_404", "err_401")
 THONG_TIN = ("info_ma_la",)                     # bài đo chỉ ghi nhận, không chấm
 TOI_THIEU = 12                                  # số lượt đo hợp lệ tối thiểu để chấm 1 gói
+# Wealbee sửa API đêm 11/11/2026: phần vận hành (sẵn sàng, độ trễ, lỗi) chấm trên số đo sau mốc này khi đã đủ TOI_THIEU lượt
+MOC_CAP_NHAT = os.environ.get("MOC_CAP_NHAT_API") or "2026-11-11T17:00:00+00:00"          # 00:00 12/11 giờ Việt Nam
 DNS = ("getaddrinfo", "11001", "name or service not known", "temporary failure in name resolution",
        "nodename nor servname", "no address associated")
 LY_DO = {"extractor_note": "bộ chép số để lại ghi chú", "missing_data": "thiếu số liệu",
@@ -243,7 +246,7 @@ def tong_hop_goi(rs: list[dict]) -> dict:
 # ---------------------------------------------------------------- dữ liệu BCTC đã đồng bộ (độ tươi, chất lượng)
 def du_lieu_web() -> dict:
     """Toàn bộ BCTC gói Doanh nghiệp đã đồng bộ về web: độ tươi (thấy file -> có số) + trạng thái + phép kiểm."""
-    tuoi, chep, am, tt, ly_do, kd, kt, n = [], [], [], Counter(), Counter(), 0, 0, 0
+    tuoi, chep, am, sau, tt, ly_do, kd, kt, n = [], [], [], [], Counter(), Counter(), 0, 0, 0
     for f in sorted((WEB_DN / "ma").glob("*.json")):
         try:
             m = json.loads(f.read_text(encoding="utf-8"))
@@ -264,6 +267,8 @@ def du_lieu_web() -> dict:
                     am.append(st.get("id") or f"{m.get('ma')}.{ky}")
                 else:
                     tuoi.append(p)
+                    if b >= _tg(MOC_CAP_NHAT):
+                        sau.append(p)
             if a and e and e >= a:
                 chep.append((e - a).total_seconds() / 60)
     if not n:
@@ -282,7 +287,8 @@ def du_lieu_web() -> dict:
                      "trong_15p": round(100 * sum(v <= 15 for v in tuoi) / len(tuoi), 1) if tuoi else None,
                      "trong_60p": round(100 * sum(v <= 60 for v in tuoi) / len(tuoi), 1) if tuoi else None,
                      "trong_24h": round(100 * sum(v <= 1440 for v in tuoi) / len(tuoi), 1) if tuoi else None,
-                     "chep_p50": _pct(chep, 50), "bat_thuong": len(am), "bat_thuong_mau": am[:6]}}
+                     "chep_p50": _pct(chep, 50), "bat_thuong": len(am), "bat_thuong_mau": am[:6],
+                     "sau_cap_nhat": {"n": len(sau), "p50": _pct(sau, 50)}}}
 
 
 def bao_mat_moi_nhat(chung: list[dict]) -> dict:
@@ -370,8 +376,12 @@ def nhan_dinh(g: dict, web: dict, bm: dict, loai: dict, bc: dict) -> dict:
                     "lập trình viên phía khách xử lý lỗi dễ.")
     if tc["rate_limit"]["xep"] == "dat":
         q = (t.get("chinh_sach_rl") or {}).get("q")
-        manh.append(f"Giới hạn tốc độ minh bạch: mọi phản hồi có header RateLimit{f' ({q} request/phút)' if q else ''}, "
-                    "khách biết còn bao nhiêu lượt để tự giãn nhịp.")
+        don = g.get("ban_don") or {}
+        manh.append(f"Giới hạn tốc độ minh bạch: mọi phản hồi có header RateLimit{f' ({q} request/phút)' if q else ''}, khách biết còn "
+                    "bao nhiêu lượt để tự giãn nhịp."
+                    + (f" Bắn dồn liên tục thì tới request thứ {don['luot_429']} mới bị chặn bằng 429 kèm Retry-After "
+                       f"{don.get('retry_after')} giây và lỗi đúng RFC 9457; chờ xong gọi lại được ngay (hạn mức kiểu thùng token, hồi dần theo giây)."
+                       if don.get("luot_429") and don.get("retry_after") else ""))
     if tc["bao_mat"]["xep"] == "dat":
         manh.append(f"Bảo mật đủ chuẩn: {bm.get('tls')}, HSTS, tự chuyển http → https, từ chối khoá API gửi qua URL.")
     if tc["do_phu"]["xep"] == "dat":
@@ -443,7 +453,7 @@ def nhan_dinh(g: dict, web: dict, bm: dict, loai: dict, bc: dict) -> dict:
     if bm.get("khoa_query_sua_luc"):
         da_sua.append(f"Từ chối khoá API gửi qua URL: lần kiểm ngày {ngay_vn(bm['khoa_query_loi_luc'])} API còn chấp nhận khoá trong URL "
                       f"(dễ lộ khoá qua log, lịch sử trình duyệt); lần kiểm ngày {ngay_vn(bm['khoa_query_sua_luc'])} đã trả lỗi 401 credentials_in_url.")
-    ml = t.get("ma_la") or {}
+    ml = (g.get("tong_ca_ky") or t).get("ma_la") or {}
     if ml.get("lan_403_cuoi") and (ml.get("hien_tai") or "").startswith("404"):
         da_sua.append(f"Gọi mã không tồn tại: đến ngày {ngay_vn(ml['lan_403_cuoi'])} còn trả 403 ticker_not_entitled (dễ hiểu nhầm là thiếu quyền), "
                       "sau đó trả đúng 404 not_found.")
@@ -453,12 +463,24 @@ def nhan_dinh(g: dict, web: dict, bm: dict, loai: dict, bc: dict) -> dict:
                        "de_xuat": "Đề nghị Wealbee trả 404 not_found cho mã không tồn tại."})
     if (g.get("tin") or {}).get("n"):
         da_sua.append("Bổ sung endpoint tin tức /news vào Data API (trước 11/2026 tin chỉ có ở API riêng của app).")
+    cn = bc.get("cap_nhat_api") or {}
+    a, b = (cn.get("truoc") or {}).get("vn") or {}, (cn.get("sau") or {}).get("vn") or {}
+    if a.get("p95") and b.get("p95") and b.get("luot", 0) >= 5 and b["p95"] < 0.8 * a["p95"]:
+        da_sua.append(f"Sau bản cập nhật API đêm 11/11, API nhanh hơn so với 48 giờ trước đó: đo từ Việt Nam, 95% request xong trong "
+                      f"{so_vn(b['p95'])} ms (trước {so_vn(a['p95'])} ms), trung vị {so_vn(b['p50'])} ms (trước {so_vn(a['p50'])} ms)"
+                      + (f"; request chậm trên 1 giây từ {so_vn(a.get('tren_1s'), 1)}% còn {so_vn(b.get('tren_1s'), 1)}%." if a.get("tren_1s") else "."))
+        ea, eb = (cn.get("truoc") or {}).get("ep_vn") or {}, (cn.get("sau") or {}).get("ep_vn") or {}
+        nhanh = sorted(((e, ea[e], eb[e]) for e in ea if e in eb and ea[e] and eb[e] and ea[e] > 150 and eb[e] < 0.6 * ea[e]),
+                       key=lambda x: x[2] / x[1])
+        if nhanh:
+            da_sua.append("Endpoint nhanh lên nhiều nhất sau bản cập nhật (p95, đo từ Việt Nam): "
+                          + "; ".join(f"{TEN_EP.get(e, e)} {so_vn(x)} → {so_vn(y)} ms" for e, x, y in nhanh[:4]) + ".")
 
     # --- giới hạn của phép đo
     if loai.get("luot_mat_mang"):
         gioi_han.append(f"{so_vn(loai['luot_mat_mang'])} lượt quét bị loại vì máy đo mất mạng (lỗi DNS; cùng lúc Vietstock và API tin của app "
                         "cũng lỗi). Đây là sự cố phía máy đo, không tính vào điểm của Wealbee.")
-    gh = g["theo_nguon"].get("github") or {}
+    gh = (g.get("theo_nguon_ca_ky") or g["theo_nguon"]).get("github") or {}
     if gh.get("so_luot") is not None and bc.get("tu"):
         ngay = max(1, (_tg(bc["den"]) - _tg(bc["tu"])).days)
         if gh["so_luot"] < ngay * 12:
@@ -468,8 +490,14 @@ def nhan_dinh(g: dict, web: dict, bm: dict, loai: dict, bc: dict) -> dict:
     if don and not don.get("luot_429"):
         gioi_han.append(f"Chưa chạm tới lỗi 429: lần bắn dồn gần nhất gửi {don.get('so_luot')} request liên tục mà vẫn trong giới hạn "
                         f"{don.get('q')} request/phút. Từ 12/11 bài bắn dồn vượt giới hạn vài request để kiểm hành vi 429 và Retry-After.")
-    gioi_han.append("Độ tươi BCTC tính theo mốc thời gian Wealbee tự ghi (detected_at → first_published_at), chưa đối chiếu với giờ "
-                    "doanh nghiệp đăng BCTC lên sàn.")
+    if cn.get("dung_de_cham"):
+        gioi_han.append(f"Phần vận hành (sẵn sàng, độ trễ, lỗi, giới hạn tốc độ) chấm trên {so_vn(cn['sau']['vn']['luot'] + cn['sau']['my']['luot'])} lượt đo sau bản cập nhật API "
+                        f"(từ 00:00 12/11) để phản ánh API hiện tại. Số lượt còn ít; kết quả sẽ chắc hơn sau vài ngày đo.")
+    sc = tuoi.get("sau_cap_nhat") or {}
+    gioi_han.append("Độ tươi BCTC tính trên toàn bộ BCTC đã công bố, theo mốc thời gian Wealbee tự ghi (detected_at → first_published_at), "
+                    "chưa đối chiếu với giờ doanh nghiệp đăng BCTC lên sàn."
+                    + (f" Sau bản cập nhật mới có {sc['n']} BCTC được công bố (trung vị {so_vn(sc['p50'], 1)} phút), chưa đủ để đánh giá riêng."
+                       if sc.get("n", 0) < 30 else ""))
 
     # --- kết luận
     yeu = [x for x in g["tieu_chi"] if x["xep"] in ("kha", "chua_dat")]
@@ -491,6 +519,17 @@ def nhan_dinh(g: dict, web: dict, bm: dict, loai: dict, bc: dict) -> dict:
 
 
 # ---------------------------------------------------------------- dựng báo cáo
+def _tom_ky(g: dict) -> dict:
+    """Tóm tắt 1 khoảng thời gian để so trước / sau bản cập nhật API."""
+    def m(s):
+        d = s.get("do_tre") or {}
+        return {"luot": s.get("so_luot", 0), "p50": d.get("p50"), "p95": d.get("p95"), "tren_1s": d.get("tren_1s"), "max": d.get("max"),
+                "kha_dung": s.get("kha_dung")}
+    vn, my = g["theo_nguon"].get("may-vn") or {}, g["theo_nguon"].get("github") or {}
+    return {"vn": m(vn), "my": m(my), "ep_vn": {e: v.get("p95") for e, v in (vn.get("theo_ep") or {}).items()},
+            "tu": g.get("tu"), "den": g.get("den")}
+
+
 def _api_khac(chung: list[dict], key: str) -> dict:
     xs = [l for c in chung for l in c.get(key, [])]
     return {"n": len(xs), "ok": sum(bool(l.get("dung")) for l in xs),
@@ -511,7 +550,17 @@ def tao(ghi: bool = True) -> dict:
                      "do_tre": _thong_ke([h["ms_tong"] for h in hl if h.get("dung") and not h.get("lanh")])},
           "bao_mat": bm, "web": web, "tin_app": _api_khac(chung, "tin"), "vietstock": _api_khac(chung, "vietstock"), "goi": {}}
     for ten in ("free", "dn"):
-        g = tong_hop_goi([r for r in sach if r.get("goi") == ten])
+        cua = [r for r in sach if r.get("goi") == ten]
+        g = tong_hop_goi(cua)
+        g["tong_ca_ky"], g["theo_nguon_ca_ky"] = g["tong"], g["theo_nguon"]
+        if ten == "dn":
+            gs = tong_hop_goi([r for r in cua if r["luc"] >= MOC_CAP_NHAT])
+            moc_truoc = (_tg(MOC_CAP_NHAT) - timedelta(hours=48)).isoformat()   # so với 48 giờ ngay trước bản cập nhật (tách tác động)
+            gt = tong_hop_goi([r for r in cua if moc_truoc <= r["luc"] < MOC_CAP_NHAT])
+            dung = gs["tong"]["so_luot"] >= TOI_THIEU
+            if dung:                                                   # chấm vận hành trên API hiện tại (sau bản cập nhật)
+                g.update({"tong": gs["tong"], "theo_nguon": gs["theo_nguon"], "goc_cham": gs["goc_cham"]})
+            bc["cap_nhat_api"] = {"moc": MOC_CAP_NHAT, "dung_de_cham": dung, "truoc": _tom_ky(gt), "sau": _tom_ky(gs)}
         du = g["tong"]["so_luot"] >= TOI_THIEU
         g["tieu_chi"] = cham_diem(g, web if ten == "dn" else {}, bm)
         g["du_lieu_du"] = du
