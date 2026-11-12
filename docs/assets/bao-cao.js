@@ -1,114 +1,223 @@
-// Trang báo cáo đánh giá hiệu suất Wealbee API (giải mã bằng mật khẩu nội bộ).
+// Trang báo cáo đánh giá Wealbee Data API (giải mã bằng mật khẩu nội bộ). Số liệu do wb_api/bao_cao.py dựng mỗi giờ.
+// Bố cục: kết luận → vấn đề cần trao đổi → điểm mạnh / đã cải thiện → bảng chấm → biểu đồ → chi tiết → gói Free → phương pháp.
 const XEP = {dat: 'Đạt', kha: 'Khá', chua_dat: 'Chưa đạt', chua_du: 'Chưa đủ dữ liệu'};
-const TEN_GOI = {free: 'Gói Free', dn: 'Gói Doanh nghiệp'}, MAU = {free: '#f59e0b', dn: '#22c55e'};
-const TEN_NGUON = {github: 'GitHub Actions (máy chủ Mỹ)', 'may-vn': 'Máy ở Việt Nam'};
+const MUC = {cao: 'Cao', trung_binh: 'Trung bình', thap: 'Thấp'};
+const TEN_NGUON = {github: 'Mỹ (GitHub Actions)', 'may-vn': 'Việt Nam'};
+const MAU_NGUON = {github: '#7c5cff', 'may-vn': '#22c55e'};
+const TEN_EP = {me: 'Thông tin gói', companies: 'Danh sách công ty', company: 'Chi tiết công ty', latest: 'BCTC mới nhất của 1 mã',
+  statements_list: 'Danh sách BCTC', statements_page2: 'Danh sách BCTC, trang 2', statement_full: 'BCTC đầy đủ', versions: 'Lịch sử phiên bản',
+  filings: 'Danh sách file BCTC', events: 'Sự kiện', news: 'Tin tức', news_detail: 'Chi tiết tin', news_ma: 'Tin theo mã'};
+const Y_NGHIA = {
+  kha_dung: 'Tỷ lệ request trả kết quả đúng. Lỗi do máy đo mất mạng không tính.',
+  do_tre: '95% request xong trong khoảng thời gian này (đo từ Việt Nam, kết nối đã mở).',
+  ttfb: 'Thời gian chờ tới byte đầu tiên của phản hồi, trung vị.',
+  loi_may_chu: 'Lỗi 5xx, quá thời gian hoặc rớt kết nối khi mạng của máy đo vẫn bình thường.',
+  on_dinh: 'Tỷ lệ request mất hơn 1 giây. Càng thấp thì tốc độ càng đều.',
+  chuan_loi: 'Lỗi 400 / 401 / 404 có đúng mã HTTP và đúng định dạng RFC 9457 không.',
+  rate_limit: 'Có báo hạn mức còn lại (header RateLimit) và chặn bằng 429 kèm Retry-After đúng lúc không.',
+  do_tuoi: 'Từ lúc Wealbee thấy file BCTC tới lúc có số trên API, trung vị. Wealbee cam kết 15 phút.',
+  chat_luong: 'Tỷ lệ BCTC đã qua kiểm tra (verified), trên toàn bộ BCTC đã đồng bộ.',
+  do_phu: 'Số công ty đã có BCTC của quý mới nhất.',
+  bao_mat: 'TLS ≥ 1.2, HSTS, tự chuyển http → https, từ chối khoá API gửi qua URL.',
+};
+const pt = x => x == null ? '—' : (Math.round(x * 100) / 100).toLocaleString('vi-VN');
+const ngay = s => s ? new Date(s).toLocaleDateString('vi-VN', {day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh'}) : '—';
+function gtTc(t) {
+  const v = t.gia_tri;
+  if (v == null) return '—';
+  if (t.don_vi === '%') return pt(v) + '%';
+  if (t.don_vi === '% có header') return pt(v) + '% có header';
+  if (t.don_vi === '/4') return v + '/4';
+  if (t.don_vi === 'ms') return so(v) + ' ms';
+  if (t.don_vi === 'phút') return so(v) + ' phút';
+  return so(v) + (t.don_vi ? ' ' + t.don_vi : '');
+}
+const the = (tieuDe, noiDung, them = '') => `<div class="card" ${them}><h2>${tieuDe}</h2>${noiDung}</div>`;
 
-function oDiem(ten, g) {
-  const d = g.diem, xep = d == null ? 'chua_du' : d >= 85 ? 'dat' : d >= 65 ? 'kha' : 'chua_dat';
-  return `<div class="card"><h3>${TEN_GOI[ten]}</h3><div style="display:flex;align-items:baseline;gap:10px"><div class="big">${d == null ? '—' : so(d, 1)}</div>
-    <div class="mut">/100</div><span class="tag ${xep}">${XEP[xep]}</span></div>
-    <div class="sm mut">${so(g.tong.so_luot_quet)} lượt quét · ${so(g.tong.so_request)} request${g.tong.bo_qua ? ` · ${esc(g.tong.bo_qua)}` : ''}</div>
-    <div class="bar" style="margin-top:10px"><i style="width:${d || 0}%"></i></div></div>`;
+function hero(bc) {
+  return `<section class="hero"><span class="pill">Cập nhật ${tg(bc.tao_luc)}</span>
+    <h1 style="margin-top:12px">Đánh giá Wealbee Data API</h1>
+    <p class="mut">Đo tự động mỗi giờ từ ${bc.nguon.map(n => TEN_NGUON[n] || n).join(' và ')}, chấm theo 11 tiêu chí của một API dữ liệu
+    cho doanh nghiệp. Số liệu từ ${tg(bc.tu)} đến ${tg(bc.den)}.</p></section>`;
+}
+
+function ketLuan(bc) {
+  const g = bc.goi.dn, nd = bc.nhan_dinh, t = g.tong;
+  return `<div class="grid bc-dau">
+    <div class="card"><h3>Gói Doanh nghiệp</h3><div style="display:flex;align-items:baseline;gap:10px">
+      <div class="big">${g.diem == null ? '—' : so(g.diem, 1)}</div><div class="mut">/100</div><span class="tag ${g.xep}">${XEP[g.xep]}</span></div>
+      <div class="bar" style="margin:10px 0 8px"><i style="width:${g.diem || 0}%"></i></div>
+      <div class="sm mut">${so(t.so_luot)} lượt đo hợp lệ · ${so(t.so_request_cham)} request được chấm</div></div>
+    <div class="card"><h3>Kết luận</h3><p style="margin:0;font-size:16px;line-height:1.65">${esc(nd.ket_luan)}</p></div></div>`;
+}
+
+function kpis(bc) {
+  const g = bc.goi.dn, tc = Object.fromEntries(g.tieu_chi.map(x => [x.ma, x]));
+  const o = (ma, nhan, phu) => { const x = tc[ma]; return `<div class="card kpi"><div class="l">${nhan}</div><div class="v">${gtTc(x)}</div>
+    <div class="sm"><span class="tag ${x.xep}">${XEP[x.xep]}</span> <span class="mut2 xs">mục tiêu ${esc(x.nguong)}</span></div>${phu ? `<div class="xs mut2" style="margin-top:4px">${phu}</div>` : ''}</div>`; };
+  const tu = bc.web?.tuoi || {};
+  return `<div class="grid g5" style="margin-top:16px">${o('kha_dung', 'Request thành công')}${o('do_tre', 'Độ trễ p95 (từ Việt Nam)')}
+    ${o('do_tuoi', 'Độ tươi BCTC', tu.n ? `${pt(tu.trong_15p)}% trong 15 phút · ${pt(tu.trong_60p)}% trong 1 giờ` : '')}
+    ${o('chat_luong', 'BCTC đã kiểm chứng')}${o('do_phu', 'Công ty có BCTC quý mới')}</div>`;
+}
+
+function vanDe(bc) {
+  const ds = bc.nhan_dinh.van_de || [];
+  if (!ds.length) return the('Vấn đề cần trao đổi với Wealbee', '<div class="sm mut">Không có vấn đề nào đáng kể.</div>');
+  return the(`Vấn đề cần trao đổi với Wealbee <span class="pill" style="vertical-align:3px">${ds.length}</span>`,
+    ds.map(x => `<div class="bc-vd"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="bc-muc ${x.muc}">${MUC[x.muc] || x.muc}</span>
+      <b>${esc(x.tieu_de)}</b></div><div class="sm" style="margin-top:6px">${esc(x.chi_tiet)}</div>
+      <div class="sm mut" style="margin-top:4px">→ ${esc(x.de_xuat)}</div></div>`).join(''));
+}
+
+function manhVaSua(bc) {
+  const nd = bc.nhan_dinh;
+  const ds = (xs, dau, lop) => xs.length ? `<ul class="bc-ds">${xs.map(x => `<li><span class="${lop}">${dau}</span><span class="sm">${esc(x)}</span></li>`).join('')}</ul>`
+    : '<div class="sm mut">Chưa có.</div>';
+  return `<div class="grid g2">${the('Điểm mạnh', ds(nd.diem_manh, '✓', 'up'))}
+    ${the('Wealbee đã cải thiện trong thời gian theo dõi', ds(nd.da_sua, '▲', 'up'))}</div>`;
 }
 
 function bangTieuChi(bc) {
-  const tc = {free: bc.goi.free.tieu_chi, dn: bc.goi.dn.tieu_chi};
-  return `<div class="card"><h2>Bảng chấm theo tiêu chí doanh nghiệp</h2><div style="overflow-x:auto"><table>
-    <tr><th>Tiêu chí</th><th>Ngưỡng đạt</th><th class="n">Trọng số</th><th class="n">Gói Free</th><th class="n">Gói Doanh nghiệp</th></tr>
-    ${tc.dn.map((t, i) => { const f = tc.free[i];
-      const o = x => `${x.gia_tri == null ? '—' : so(x.gia_tri, x.gia_tri < 10 ? 2 : 1)} ${esc(x.don_vi)} <span class="tag ${x.xep}">${XEP[x.xep]}</span>`;
-      return `<tr><td><b>${esc(t.ten)}</b></td><td class="sm mut">${esc(t.nguong)}</td><td class="n">${t.trong_so}</td><td class="n">${o(f)}</td><td class="n">${o(t)}</td></tr>`; }).join('')}
-  </table></div></div>`;
+  const g = bc.goi.dn;
+  return the('Bảng chấm 11 tiêu chí (gói Doanh nghiệp)', `<div style="overflow-x:auto"><table>
+    <tr><th>Tiêu chí</th><th class="n">Kết quả</th><th class="n">Mục tiêu</th><th class="n">Xếp hạng</th><th class="n">Trọng số</th></tr>
+    ${g.tieu_chi.map(t => `<tr><td><b>${esc(t.ten)}</b><div class="xs mut2">${esc(Y_NGHIA[t.ma] || '')}</div></td>
+      <td class="n">${gtTc(t)}</td><td class="n sm mut">${esc(t.nguong)}</td><td class="n"><span class="tag ${t.xep}">${XEP[t.xep]}</span></td>
+      <td class="n">${t.trong_so}</td></tr>`).join('')}</table></div>
+    <div class="xs mut2" style="margin-top:8px">Điểm tổng = trung bình có trọng số: Đạt tính 100%, Khá 60%, Chưa đạt 15%; tiêu chí chưa đủ dữ liệu không tính.
+    Xếp hạng tổng: từ 85 điểm là Đạt, từ 65 là Khá.</div>`);
 }
 
-function bieuDoTre(bc) {
-  const s = [];
-  for (const [g, v] of Object.entries(bc.goi)) for (const [n, t] of Object.entries(v.theo_nguon || {}))
-    s.push({ten: `${TEN_GOI[g]} · ${TEN_NGUON[n] || n}`, mau: n === 'github' ? MAU[g] : (g === 'dn' ? '#86efac' : '#fde68a'),
-            diem: (t.chuoi || []).map(c => [new Date(c.luc).getTime(), c.p50])});
-  const kd = [];
-  for (const [g, v] of Object.entries(bc.goi)) kd.push({ten: TEN_GOI[g], mau: MAU[g],
-    diem: (v.tong.chuoi || []).map(c => [new Date(c.luc).getTime(), c.n ? 100 * c.ok / c.n : null])});
-  return `<div class="grid g2"><div class="card"><h2>Độ trễ trung vị mỗi lượt quét (ms)</h2>${bieuDoDuong(s, {donVi: ''})}</div>
-    <div class="card"><h2>Tỷ lệ request thành công mỗi lượt (%)</h2>${bieuDoDuong(kd, {donVi: '%'})}</div></div>`;
+function bieuDo(bc) {
+  const tn = bc.goi.dn.theo_nguon || {};
+  const tre = Object.entries(tn).map(([n, t]) => ({ten: `Đo từ ${TEN_NGUON[n] || n}`, mau: MAU_NGUON[n] || '#4f8cff',
+    diem: (t.chuoi || []).map(c => [new Date(c.luc).getTime(), c.p50])}));
+  const kd = Object.entries(tn).map(([n, t]) => ({ten: `Đo từ ${TEN_NGUON[n] || n}`, mau: MAU_NGUON[n] || '#4f8cff',
+    diem: (t.chuoi || []).map(c => [new Date(c.luc).getTime(), c.n ? 100 * c.ok / c.n : null])}));
+  return `<div class="grid g2">${the('Độ trễ trung vị mỗi lượt đo (ms)', bieuDoDuong(tre, {donVi: ''}))}
+    ${the('Tỷ lệ request thành công mỗi lượt đo (%)', bieuDoDuong(kd, {donVi: '%'}) +
+      `<div class="xs mut2" style="margin-top:6px">Khoảng trống là lúc máy đo tắt hoặc mất mạng, không phải API ngừng hoạt động.</div>`)}</div>`;
 }
 
 function bangEp(bc) {
-  const eps = [...new Set(Object.values(bc.goi).flatMap(v => Object.keys(v.tong.theo_ep || {})))];
+  const tn = bc.goi.dn.theo_nguon || {}, ng = Object.keys(tn);
+  const eps = [...new Set(ng.flatMap(n => Object.keys(tn[n].theo_ep || {})))];
   if (!eps.length) return '';
-  const o = (g, e) => { const t = bc.goi[g].tong.theo_ep?.[e]; return t?.n ? `${so(t.p50)} / ${so(t.p95)} / ${so(t.p99)}` : '—'; };
-  return `<div class="card"><h2>Độ trễ theo endpoint (p50 / p95 / p99, ms)</h2><div style="overflow-x:auto"><table>
-    <tr><th>Bài đo</th><th class="n">Gói Free</th><th class="n">Gói Doanh nghiệp</th></tr>
-    ${eps.map(e => `<tr><td class="sm">${esc(e)}</td><td class="n">${o('free', e)}</td><td class="n">${o('dn', e)}</td></tr>`).join('')}</table></div>
-    <div class="xs mut2">Không tính lượt đầu của mỗi kết nối (có bắt tay TLS); lượt đầu tính riêng ở mục "kết nối lạnh".</div></div>`;
+  const o = (n, e) => { const t = tn[n].theo_ep?.[e]; return t?.n ? `${so(t.p50)} / <b class="${t.p95 > 1000 ? 'down' : ''}">${so(t.p95)}</b>` : '—'; };
+  return the('Độ trễ theo endpoint (trung vị / p95, ms)', `<div style="overflow-x:auto"><table>
+    <tr><th>Endpoint</th>${ng.map(n => `<th class="n">Đo từ ${TEN_NGUON[n] || n}</th>`).join('')}</tr>
+    ${eps.map(e => `<tr><td class="sm">${esc(TEN_EP[e] || e)} <span class="xs mut2">${esc(e)}</span></td>${ng.map(n => `<td class="n">${o(n, e)}</td>`).join('')}</tr>`).join('')}
+    </table></div><div class="xs mut2" style="margin-top:6px">Không tính lượt đầu của mỗi kết nối (có bắt tay TLS). p95 trên 1 giây tô đỏ.
+    Đo từ Mỹ chậm hơn vì máy chủ Wealbee đặt ở châu Á.</div>`);
 }
 
-function chiTiet(bc) {
-  const o = (g, f) => { const v = bc.goi[g].tong; try { return f(v) ?? '—'; } catch { return '—'; } };
-  const dong = [
-    ['Tỷ lệ thành công', v => v.kha_dung == null ? null : so(v.kha_dung, 3) + '%'],
-    ['Lỗi máy chủ / mạng', v => v.loi_may_chu == null ? null : so(v.loi_may_chu, 3) + '%'],
-    ['Độ trễ p50 / p95 / p99', v => v.do_tre.n ? `${so(v.do_tre.p50)} / ${so(v.do_tre.p95)} / ${so(v.do_tre.p99)} ms` : null],
-    ['TTFB p50', v => v.ttfb.n ? so(v.ttfb.p50) + ' ms' : null],
-    ['Kết nối lạnh (có TLS) p50', v => v.lanh.n ? so(v.lanh.p50) + ' ms' : null],
-    ['Giới hạn tốc độ (header)', v => v.rate_limit.chinh_sach ? `${v.rate_limit.chinh_sach.q} request / ${v.rate_limit.chinh_sach.w}s` : null],
-    ['Kiểm 429 gần nhất', v => { const b = v.rate_limit.ban_don; return b ? (b.luot_429 ? `bị 429 ở lượt ${b.luot_429}/${b.so_luot} · Retry-After ${b.retry_after ?? 'thiếu'} · chờ xong gọi lại: ${b.sau_retry_after ?? '—'}` : `không bị 429 sau ${b.so_luot} lượt liên tục`) + ` · ${b.rps} req/s` : null; }],
-    ['Độ tươi (thấy file → có số)', v => v.do_tuoi.n ? `trung vị ${so(v.do_tuoi.trung_vi_phut, 1)} phút · ${so(v.do_tuoi.ty_le_15p, 1)}% ≤ 15 phút (n=${v.do_tuoi.n})` : null],
-    ['Độ trễ dữ liệu (Wealbee-Effective-Time)', v => v.do_tre_du_lieu_s.n ? `trung vị ${so(v.do_tre_du_lieu_s.p50)} giây` : null],
-    ['BCTC verified / phép kiểm đạt', v => v.chat_luong.verified == null ? null : `${so(v.chat_luong.verified, 1)}% / ${so(v.chat_luong.kiem_dat, 1)}%`],
-    ['Số công ty được phủ', v => v.so_cong_ty ? so(v.so_cong_ty) : null],
-    ['Lỗi gặp phải', v => Object.keys(v.loi || {}).length ? Object.entries(v.loi).map(([k, n]) => `${k}: ${n}`).join(', ') : 'không'],
-  ];
-  return `<div class="card"><h2>Số đo chi tiết</h2><div style="overflow-x:auto"><table><tr><th>Chỉ số</th><th class="n">Gói Free</th><th class="n">Gói Doanh nghiệp</th></tr>
-    ${dong.map(([t, f]) => `<tr><td class="sm">${t}</td><td class="n sm">${esc(o('free', f))}</td><td class="n sm">${esc(o('dn', f))}</td></tr>`).join('')}</table></div></div>`;
+function duLieu(bc) {
+  const w = bc.web || {}, tu = w.tuoi || {};
+  if (!w.so_bctc) return '';
+  const chia = [[tu.trong_15p, '≤ 15 phút', '#22c55e'], [tu.trong_60p - tu.trong_15p, '15–60 phút', '#86efac'],
+    [tu.trong_24h - tu.trong_60p, '1–24 giờ', '#f59e0b'], [100 - tu.trong_24h, 'trên 24 giờ', '#f43f5e']];
+  const tuoi = `<div class="bc-chia">${chia.map(([v, , m]) => `<i style="width:${Math.max(0, v || 0)}%;background:${m}"></i>`).join('')}</div>
+    <div class="legend" style="margin-top:8px">${chia.map(([v, t, m]) => `<span><b style="background:${m}"></b>${t}: ${pt(v)}%</span>`).join('')}</div>
+    <table style="margin-top:10px"><tr><td class="sm">Trung vị (thấy file → có số)</td><td class="n"><b>${so(tu.p50)} phút</b></td></tr>
+    <tr><td class="sm">10% BCTC chậm nhất mất hơn</td><td class="n">${so(tu.p90 / 60, 1)} giờ</td></tr>
+    <tr><td class="sm">Thấy file → chép xong số (trung vị)</td><td class="n">${so(tu.chep_p50)} phút</td></tr>
+    <tr><td class="sm">BCTC tính được</td><td class="n">${so(tu.n)}${tu.bat_thuong ? ` <span class="xs mut2">(${tu.bat_thuong} mốc bất thường không tính)</span>` : ''}</td></tr></table>`;
+  const tt = w.trang_thai || {};
+  const cl = `<table><tr><td class="sm">Đã kiểm chứng (verified)</td><td class="n"><b>${so(tt.verified || 0)}</b> · ${pt(w.verified)}%</td></tr>
+    <tr><td class="sm">Cần soát (needs_review)</td><td class="n">${so(tt.needs_review || 0)}</td></tr>
+    <tr><td class="sm">Phép kiểm tự động đạt</td><td class="n">${so(w.kiem[0])}/${so(w.kiem[1])} · ${pt(w.kiem_dat)}%</td></tr></table>
+    ${w.ly_do?.length ? `<div class="sm" style="margin-top:10px"><b>Lý do cần soát hay gặp</b><ul style="margin:6px 0 0;padding-left:18px">
+      ${w.ly_do.map(([a, b]) => `<li>${esc(a)}: ${so(b)}</li>`).join('')}</ul></div>` : ''}`;
+  return `<div class="grid g2">${the(`Độ tươi BCTC <span class="xs mut2">(${so(w.so_bctc)} BCTC đã đồng bộ)</span>`, tuoi)}${the('Chất lượng BCTC', cl)}</div>`;
 }
 
-function quyen(bc) {
-  const q = g => bc.goi[g].tong.quyen || {};
-  const keys = [...new Set([...Object.keys(q('free')), ...Object.keys(q('dn'))])];
-  if (!keys.length) return '';
-  return `<div class="card"><h2>So sánh quyền của 2 gói (từ GET /v1/me)</h2><table><tr><th>Quyền</th><th class="n">Gói Free</th><th class="n">Gói Doanh nghiệp</th></tr>
-    ${keys.map(k => `<tr><td class="sm">${esc(k)}</td><td class="n sm">${esc(JSON.stringify(q('free')[k] ?? '—'))}</td><td class="n sm">${esc(JSON.stringify(q('dn')[k] ?? '—'))}</td></tr>`).join('')}</table></div>`;
+function tinTuc(bc) {
+  const tin = bc.goi.dn.tin || {}, m = tin.mau || {};
+  if (!tin.n && !m.n) return '';
+  const vn = bc.goi.dn.theo_nguon?.['may-vn']?.theo_ep || bc.goi.dn.tong.theo_ep || {};
+  const ep = ['news', 'news_detail', 'news_ma'].filter(e => vn[e]?.n).map(e => `${TEN_EP[e]} ${so(vn[e].p50)} / ${so(vn[e].p95)} ms`).join(' · ');
+  return the('Tin tức qua Data API (/news)', `<table>
+    <tr><td class="sm">Số tin đã theo dõi</td><td class="n">${so(tin.n)}</td></tr>
+    <tr><td class="sm">Bài gốc đầu tiên → Wealbee có tin (trung vị)</td><td class="n"><b>${so(tin.tre?.p50)} phút</b></td></tr>
+    <tr><td class="sm">Có tin trong 15 phút / 1 giờ</td><td class="n">${pt(tin.trong_15p)}% / ${pt(tin.trong_60p)}%</td></tr>
+    ${m.n ? `<tr><td class="sm">Trong ${m.n} tin mới nhất: có tóm tắt / có bài phân tích / gắn mã</td><td class="n">${m.co_tom_tat} / ${m.co_phan_tich} / ${m.co_ma}</td></tr>` : ''}
+    ${ep ? `<tr><td class="sm">Độ trễ (trung vị / p95, đo từ Việt Nam)</td><td class="n sm">${ep}</td></tr>` : ''}</table>
+    <div class="xs mut2" style="margin-top:8px">Endpoint mới của Data API (11/2026): lọc theo mã, kèm nguồn bài gốc, sắc thái, phân loại tin.</div>`);
+}
+
+function rlBaoMat(bc) {
+  const t = bc.goi.dn.tong, d = bc.goi.dn.ban_don, b = bc.bao_mat || {}, ml = t.ma_la || {};
+  const cs = t.chinh_sach_rl;
+  const rl = `<table>
+    <tr><td class="sm">Hạn mức (header RateLimit-Policy)</td><td class="n">${cs ? `${cs.q} request / ${cs.w} giây` : '—'}</td></tr>
+    <tr><td class="sm">Phản hồi có header RateLimit</td><td class="n">${pt(t.co_header_rl)}%</td></tr>
+    <tr><td class="sm">Bắn dồn gần nhất</td><td class="n sm">${d ? (d.luot_429 ? `bị 429 ở request thứ ${d.luot_429} · Retry-After ${esc(d.retry_after ?? 'thiếu')} · chờ xong gọi lại: ${d.sau_retry_after ?? '—'}`
+      : `${d.so_luot} request liên tục, chưa bị 429`) : 'chưa chạy'}</td></tr>
+    <tr><td class="sm">Lỗi 400 / 401 / 404 đúng mã và RFC 9457</td><td class="n">${so(Math.min(t.chuan_loi.dung_ma, t.chuan_loi.rfc9457))}/${so(t.chuan_loi.n)}</td></tr>
+    <tr><td class="sm">Gọi mã không tồn tại trả về</td><td class="n">${esc(ml.hien_tai || '—')}</td></tr></table>`;
+  const y = (v, ten) => `<tr><td class="sm">${ten}</td><td class="n"><span class="tag ${v ? 'dat' : 'chua_dat'}">${v ? 'Có' : 'Không'}</span></td></tr>`;
+  const bm = `<table><tr><td class="sm">Phiên bản TLS</td><td class="n">${esc(b.tls || '—')}</td></tr>
+    <tr><td class="sm">Chứng chỉ</td><td class="n">${esc(b.cap_boi || '')} · còn ${b.chung_chi_con_ngay ?? '—'} ngày</td></tr>
+    ${y(b.hsts, 'HSTS (Strict-Transport-Security)')}${y(b.http_sang_https, 'Tự chuyển http → https')}${y(b.khoa_qua_query_bi_tu_choi, 'Từ chối khoá API gửi qua URL')}</table>`;
+  return `<div class="grid g2">${the('Giới hạn tốc độ và báo lỗi', rl)}${the('Bảo mật', bm)}</div>`;
+}
+
+function goiFree(bc) {
+  const f = bc.goi.free, d = bc.goi.dn, qf = f.quyen || {}, qd = d.quyen || {};
+  const DONG = [['rate_limit_per_minute', 'Request mỗi phút'], ['exchanges', 'Sàn'], ['products', 'Sản phẩm'], ['include_score', 'Điểm sức khoẻ tài chính'],
+    ['redistribution', 'Được hiển thị lại cho khách'], ['max_webhook_endpoints', 'Số webhook'], ['delay_minutes', 'Độ trễ dữ liệu (phút)'], ['valid_until', 'Hiệu lực đến']];
+  const v = x => x == null ? '—' : Array.isArray(x) ? x.join(', ') : x === true ? 'Có' : x === false ? 'Không' : /T\d\d:/.test(x) ? ngay(x) : x;
+  return the('Gói Free và so sánh quyền 2 gói', `${f.ghi_chu_goi ? `<div class="sm" style="margin-bottom:12px">${esc(f.ghi_chu_goi)}</div>` : ''}
+    <div style="overflow-x:auto"><table><tr><th>Quyền (từ GET /v1/me)</th><th class="n">Gói Free</th><th class="n">Gói Doanh nghiệp</th></tr>
+    ${DONG.map(([k, t]) => `<tr><td class="sm">${t}</td><td class="n sm">${esc(v(qf[k]))}</td><td class="n sm">${esc(v(qd[k]))}</td></tr>`).join('')}</table></div>
+    ${f.tong.so_luot ? `<div class="xs mut2" style="margin-top:8px">Số đo tham khảo của gói Free (${f.tong.so_luot} lượt, ${ngay(f.tu)}):
+      ${pt(f.tong.kha_dung)}% thành công, trung vị ${so(f.tong.do_tre.p50)} ms, p95 ${so(f.tong.do_tre.p95)} ms.</div>` : ''}`);
 }
 
 function apiKhac(bc) {
-  const TEN = {vs_gia: 'Vietstock · giá (tvnew/history)', vs_tin_rss: 'Vietstock · tin RSS', tin_moi: 'Wealbee app · tin mới (insights/for-you)',
-               tin_theo_ma: 'Wealbee app · tin theo mã (symbols/{mã}/insights)'};
-  const dong = (nhom) => Object.entries(nhom?.theo_ep || {}).map(([e, t]) => `<tr><td class="sm">${esc(TEN[e] || e)}</td>
-    <td class="n">${t.n ? `${so(t.p50)} / ${so(t.p95)} ms` : '—'}</td></tr>`).join('');
-  const kd = n => n?.n ? `${so(100 * n.ok / n.n, 2)}% thành công (${so(n.n)} lượt)` : 'chưa có dữ liệu';
-  const fr = bc.goi.free.tong.so_request ? bc.goi.free.tong : bc.goi.dn.tong;
-  return `<div class="card"><h2>So sánh với API miễn phí khác</h2><div class="sm mut" style="margin-bottom:8px">Wealbee Data API (p50 / p95 các endpoint):
-      <b>${fr.do_tre.n ? `${so(fr.do_tre.p50)} / ${so(fr.do_tre.p95)} ms` : '—'}</b></div>
-    <table><tr><th>API</th><th class="n">p50 / p95</th></tr>${dong(bc.vietstock)}${dong(bc.tin_tuc)}</table>
-    <div class="xs mut2" style="margin-top:8px">Vietstock: ${kd(bc.vietstock)} · API tin Wealbee: ${kd(bc.tin_tuc)}. Vietstock miễn phí chỉ có giá và tin RSS
-    (API dữ liệu chính thức DataFeed phải mua); Data API của Wealbee chưa có endpoint tin tức, tin lấy từ API của app.</div></div>`;
-}
-
-function baoMat(bc) {
-  const b = bc.bao_mat; if (!b) return '';
-  const y = (v, t) => `<tr><td class="sm">${t}</td><td class="n"><span class="tag ${v ? 'dat' : 'chua_dat'}">${v ? 'Có' : 'Không'}</span></td></tr>`;
-  return `<div class="card"><h2>Bảo mật</h2><table>
-    <tr><td class="sm">Phiên bản TLS</td><td class="n">${esc(b.tls || b.tls_loi || '—')}</td></tr>
-    <tr><td class="sm">Chứng chỉ (còn hạn)</td><td class="n">${esc(b.cap_boi || '')} · ${b.chung_chi_con_ngay ?? '—'} ngày</td></tr>
-    ${y(b.hsts, 'Header HSTS (Strict-Transport-Security)')}${y(b.http_sang_https, 'Tự chuyển http → https')}
-    ${b.khoa_qua_query_bi_tu_choi != null ? y(b.khoa_qua_query_bi_tu_choi, 'Từ chối khoá gửi qua URL (query string)') : ''}</table></div>`;
+  const TEN = {vs_gia: 'Vietstock · giá (miễn phí)', vs_tin_rss: 'Vietstock · tin RSS (miễn phí)', tin_moi: 'App Wealbee · tin mới', tin_theo_ma: 'App Wealbee · tin theo mã'};
+  const dong = nhom => Object.entries(nhom?.theo_ep || {}).map(([e, t]) => `<tr><td class="sm">${esc(TEN[e] || e)}</td>
+    <td class="n">${t.n ? `${so(t.p50)} / ${so(t.p95)} ms` : '—'}</td><td class="n">${nhom.n ? pt(100 * nhom.ok / nhom.n) + '%' : '—'}</td></tr>`).join('');
+  const vn = bc.goi.dn.theo_nguon?.['may-vn'] || bc.goi.dn.tong;
+  return the('So với các API khác', `<div style="overflow-x:auto"><table><tr><th>API</th><th class="n">Trung vị / p95</th><th class="n">Thành công</th></tr>
+    <tr><td class="sm"><b>Wealbee Data API</b> (gói Doanh nghiệp, đo từ Việt Nam)</td><td class="n"><b>${so(vn.do_tre.p50)} / ${so(vn.do_tre.p95)} ms</b></td><td class="n"><b>${pt(vn.kha_dung)}%</b></td></tr>
+    ${dong(bc.vietstock)}${dong(bc.tin_app)}</table></div>
+    <div class="xs mut2" style="margin-top:8px">Vietstock miễn phí chỉ có giá và tin RSS (API dữ liệu chính thức DataFeed phải mua), không có BCTC đã kiểm chứng,
+    nguồn gốc số liệu hay lịch sử phiên bản như Wealbee. API tin của app Wealbee là API nội bộ của app, nay đã có /news trong Data API thay thế.</div>`);
 }
 
 async function thayDoi(mk) {
   const r = await fetch('thay_doi.enc', {cache: 'no-store'});
-  if (!r.ok) return '<div class="card"><h2>Báo cáo thay đổi</h2><div class="sm mut">Chưa có thay đổi đáng kể nào kể từ khi bắt đầu theo dõi. Mỗi lượt quét, hệ thống so với các lượt trước; có cải thiện hoặc tệ đi rõ rệt sẽ tự viết báo cáo mới ở đây.</div></div>';
+  if (!r.ok) return '';
   let ds = []; try { ds = await moGoi(await r.json(), mk); } catch {}
   if (!ds.length) return '';
-  const mot = (b, mo) => `<details ${mo ? 'open' : ''} style="border-top:1px solid var(--line);padding:10px 0"><summary style="cursor:pointer">
-      <span class="tag ${b.te_di.length ? (b.cai_thien.length ? 'kha' : 'chua_dat') : 'dat'}">${b.te_di.length ? (b.cai_thien.length ? 'Lẫn lộn' : 'Tệ đi') : 'Cải thiện'}</span>
-      <b>${tg(b.luc)}</b> <span class="sm mut">${esc(b.tieu_de)}</span></summary>
+  const mot = (b, mo) => {
+    const loai = b.loai_ban === 'ghi_chu' ? ['chua_du', 'Ghi chú'] : b.te_di.length ? (b.cai_thien.length ? ['kha', 'Lẫn lộn'] : ['chua_dat', 'Tệ đi']) : ['dat', 'Cải thiện'];
+    return `<details ${mo ? 'open' : ''} style="border-top:1px solid var(--line);padding:10px 0"><summary style="cursor:pointer">
+      <span class="tag ${loai[0]}">${loai[1]}</span> <b>${tg(b.luc)}</b> <span class="sm mut">${esc(b.tieu_de)}</span></summary>
+      ${(b.ghi_chu || []).length ? `<ul class="sm">${b.ghi_chu.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
       ${b.cai_thien.length ? `<div class="sm" style="margin-top:8px"><b class="up">▲ Cải thiện</b><ul>${b.cai_thien.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
       ${b.te_di.length ? `<div class="sm"><b class="down">▼ Tệ đi</b><ul>${b.te_di.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
-      <div class="xs mut2">Điểm lúc đó: ${Object.entries(b.diem_hien_tai || {}).map(([g, d]) => `${TEN_GOI[g]} ${d == null ? '—' : so(d, 1)}`).join(' · ')}</div></details>`;
-  return `<div class="card"><div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0">Báo cáo thay đổi</h2>
-    <span class="pill">${ds.length} bản</span><div class="sp"></div><span class="xs mut2">tự viết khi có cải thiện hoặc tệ đi rõ rệt</span></div>
+      <div class="xs mut2">Điểm lúc đó: ${Object.entries(b.diem_hien_tai || {}).filter(([, d]) => d != null).map(([g, d]) => `${g === 'dn' ? 'Gói Doanh nghiệp' : 'Gói Free'} ${so(d, 1)}`).join(' · ') || '—'}</div></details>`;
+  };
+  return `<div class="card"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h2 style="margin:0">Nhật ký thay đổi</h2>
+    <span class="pill">${ds.length} bản</span><div class="sp"></div><span class="xs mut2">tự ghi khi có cải thiện hoặc tệ đi rõ rệt</span></div>
     ${ds.slice(0, 30).map((b, i) => mot(b, i === 0)).join('')}</div>`;
+}
+
+function phuongPhap(bc) {
+  const gh = bc.nhan_dinh.gioi_han || [];
+  return the('Phương pháp và giới hạn của phép đo', `<ul class="sm" style="margin:0;padding-left:18px;display:grid;gap:6px">
+    <li>Mỗi giờ, máy đo gọi khoảng 17 endpoint của gói Doanh nghiệp: thông tin gói, công ty, BCTC (mới nhất, danh sách 2 trang, đầy đủ, lịch sử phiên bản), file BCTC,
+      sự kiện, tin tức, cùng 3 lỗi cố ý (400 / 401 / 404) để kiểm cách báo lỗi. Bộ đo tự giữ nhịp dưới giới hạn tốc độ.</li>
+    <li>Mỗi ngày 1 lần: bắn dồn để kiểm giới hạn tốc độ, kiểm bảo mật (TLS, HSTS, http → https, khoá qua URL) và đếm độ phủ.</li>
+    <li>Hai góc đo: máy ở Việt Nam (gần với khách hàng thật, dùng để chấm độ trễ) và GitHub Actions ở Mỹ (để đối chiếu).</li>
+    <li>Lỗi do máy đo mất mạng (DNS, hoặc cùng lúc các API khác cũng lỗi) bị loại khỏi phép tính. Độ tươi và chất lượng tính trên toàn bộ
+      ${so(bc.web?.so_bctc)} BCTC đã đồng bộ về web, không chỉ vài BCTC mẫu.</li>
+    <li>Điểm tổng là trung bình có trọng số: Đạt tính 100%, Khá 60%, Chưa đạt 15%; tiêu chí chưa đủ dữ liệu không tính. Mỗi gói cần ít nhất 12 lượt đo hợp lệ mới được chấm.</li>
+    </ul>${gh.length ? `<h3 style="margin-top:14px">Giới hạn cần lưu ý</h3><ul class="sm" style="margin:0;padding-left:18px;display:grid;gap:6px">
+    ${gh.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}`);
 }
 
 async function main() {
@@ -116,21 +225,10 @@ async function main() {
   const r = await fetch('bao_cao.enc', {cache: 'no-store'});
   if (!r.ok) { khung.innerHTML = '<div class="card empty">Chưa có báo cáo: bộ quét chưa chạy lượt nào.</div>'; return; }
   const {du_lieu: bc, mk} = await congMatKhau('bao_cao.enc', khung, 'Báo cáo hiệu suất Wealbee API');
-  const tdHtml = await thayDoi(mk);
-  khung.innerHTML = `<section class="hero"><span class="pill">Cập nhật ${tg(bc.tao_luc)}</span>
-      <h1 style="margin-top:12px">Đánh giá hiệu suất Wealbee Data API</h1>
-      <p class="mut">Quét tự động mỗi giờ từ ${bc.nguon.map(n => TEN_NGUON[n] || n).join(' và ') || '—'}, so sánh gói Free với gói Doanh nghiệp theo các tiêu chí của một API dữ liệu cho doanh nghiệp.
-      Dữ liệu từ ${tg(bc.tu)} đến ${tg(bc.den)} (${so(bc.so_luot)} bản ghi, 30 ngày gần nhất).</p></section>
-    <div class="grid g3">${oDiem('free', bc.goi.free)}${oDiem('dn', bc.goi.dn)}
-      <div class="card"><h3>Health check (không cần khoá)</h3><div class="big">${bc.health.n ? so(100 * bc.health.ok / bc.health.n, 2) : '—'}<span class="mut" style="font-size:18px">%</span></div>
-      <div class="sm mut">${so(bc.health.n)} lượt · p50 ${so(bc.health.do_tre.p50)} ms · p95 ${so(bc.health.do_tre.p95)} ms</div></div></div>
-    <div style="margin-top:16px">${tdHtml}</div>
-    <div class="card" style="margin-top:16px"><h2>Nhận xét chính</h2><ul>${bc.nhan_xet.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
-    <div class="grid" style="margin-top:16px">${bangTieuChi(bc)}${bieuDoTre(bc)}${chiTiet(bc)}${bangEp(bc)}<div class="grid g2">${quyen(bc)}${baoMat(bc)}</div>${apiKhac(bc)}
-    <div class="card sm mut"><h2>Phương pháp</h2><ul>
-      <li>Mỗi giờ: health check + 13 bài đo cho mỗi gói (me, companies, company, statement mới nhất, danh sách 2 trang, statement đầy đủ, versions, filings, events, lỗi 400 / 401 / 404). Bộ đo tự giữ nhịp dưới giới hạn tốc độ.</li>
-      <li>Mỗi ngày 1 lần: bắn dồn để kiểm giới hạn tốc độ (lúc nào bị 429, có Retry-After không, chờ xong có gọi lại được không) và kiểm bảo mật (TLS, HSTS, http → https, khoá qua URL).</li>
-      <li>Hai góc đo: GitHub Actions chạy liên tục (máy chủ ở Mỹ, độ trễ mạng cao hơn người dùng Việt Nam), máy ở Việt Nam chạy khi máy bật. Lịch GitHub có thể trễ / bỏ lượt: khoảng trống không có nghĩa là API sập.</li>
-      <li>Điểm tổng = trung bình có trọng số (Đạt 100%, Khá 60%, Chưa đạt 15%), bỏ tiêu chí chưa đủ dữ liệu.</li></ul></div></div>`;
+  if (bc.phien_ban !== 2) { khung.innerHTML = '<div class="card empty">Báo cáo đang được dựng lại theo cách tính mới, quay lại sau ít phút.</div>'; return; }
+  const td = await thayDoi(mk);
+  khung.innerHTML = `${hero(bc)}${ketLuan(bc)}${kpis(bc)}
+    <div class="grid" style="margin-top:16px">${vanDe(bc)}${manhVaSua(bc)}${bangTieuChi(bc)}${bieuDo(bc)}${bangEp(bc)}${duLieu(bc)}
+      ${tinTuc(bc)}${rlBaoMat(bc)}${goiFree(bc)}${apiKhac(bc)}${td}${phuongPhap(bc)}</div>`;
 }
 main();

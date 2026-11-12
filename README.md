@@ -2,9 +2,9 @@
 
 - **docs/free/**: web tra cứu BCTC dùng khoá **gói Free**. Điều khoản gói Free chỉ cho dùng nội bộ, nên dữ liệu được mã hoá (AES-GCM) và người xem phải nhập mật khẩu nhóm.
 - **docs/doanh-nghiep/**: web tra cứu y hệt nhưng dùng khoá **gói Doanh nghiệp**. Gói này được phép hiển thị cho khách hàng, nên web công khai.
-- **docs/bao-cao/**: báo cáo đánh giá hiệu suất Wealbee API theo các tiêu chí của một API doanh nghiệp, so sánh 2 gói. Có mật khẩu.
+- **docs/bao-cao/**: báo cáo đánh giá Wealbee Data API theo 11 tiêu chí của một API doanh nghiệp, gồm kết luận, vấn đề cần trao đổi với Wealbee, điểm mạnh, bảng chấm và phương pháp. Có mật khẩu. Từ 12/11/2026, lỗi mạng phía máy đo không còn bị tính thành lỗi API; độ tươi và chất lượng tính trên toàn bộ BCTC đã đồng bộ.
 - Web bản Free dùng thêm **API miễn phí của Vietstock**: giá theo ngày từ API biểu đồ `api.vietstock.vn/tvnew` và tin từ RSS. API dữ liệu chính thức của Vietstock là DataFeed, phải mua. Web Doanh nghiệp lấy giá từ VNDirect, trình duyệt gọi thẳng.
-- **Tin tức:** Wealbee Data API **không có endpoint tin tức**: thử `/news`, `/articles`, `/feed`… đều 404, còn `/events` chỉ có `filing.detected` và `statement.published`. Vì vậy tin lấy từ API tin của app Wealbee (`wealbee.com/api/insights/for-you`, `/api/symbols/{mã}/insights`), công khai, không cần khoá. API này không cho trình duyệt gọi thẳng (không CORS), nên mỗi giờ được lấy về và xuất thành endpoint tĩnh:
+- **Tin tức:** từ 11/2026 Data API đã có `/news` (gói Doanh nghiệp, bộ đo có đo). Trước đó Data API **không có endpoint tin tức**: thử `/news`, `/articles`, `/feed`… đều 404, còn `/events` chỉ có `filing.detected` và `statement.published`. Vì vậy tin lấy từ API tin của app Wealbee (`wealbee.com/api/insights/for-you`, `/api/symbols/{mã}/insights`), công khai, không cần khoá. API này không cho trình duyệt gọi thẳng (không CORS), nên mỗi giờ được lấy về và xuất thành endpoint tĩnh:
   - `docs/tin/moi.json`: 60 tin mới nhất; `docs/tin/ma/<MÃ>.json`: tin theo mã; `docs/tin/chi_muc.json`: số tin theo mã
   - `docs/vietstock/tin_moi.json`, `docs/vietstock/tin_ma/<MÃ>.json`, `docs/vietstock/gia/<MÃ>.json`
 - Báo cáo so sánh thêm hiệu suất API Wealbee với API miễn phí của Vietstock và API tin của app Wealbee.

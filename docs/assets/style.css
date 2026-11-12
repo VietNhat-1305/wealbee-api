@@ -86,3 +86,13 @@ footer{color:var(--mut2);font-size:12.5px;padding:30px 0 40px}
 .ai-cai{display:grid;gap:14px}.ai-cai .card{padding:16px}.ai-cai select{width:100%}
 .ai-loi{background:#33101a;border:1px solid #6b1d2c;color:#fecdd3;border-radius:12px;padding:10px 12px;font-size:13.5px}
 @media(max-width:560px){.ai-noi{right:14px;bottom:14px;padding:12px 17px}.ai-khung{width:100vw;border-left:0}}
+/* Trang báo cáo (docs/assets/bao-cao.js) */
+.bc-dau{grid-template-columns:minmax(240px,1fr) minmax(0,2.2fr)}
+.g5{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.bc-muc{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.bc-muc.cao{background:#33101a;color:#fb7185}.bc-muc.trung_binh{background:#2e2408;color:#fbbf24}.bc-muc.thap{background:#132240;color:#93c5fd}
+.bc-vd{padding:14px 0;border-top:1px solid var(--line)}.bc-vd:first-of-type{border-top:0;padding-top:2px}
+.bc-ds{margin:0;padding:0;list-style:none;display:grid;gap:10px}.bc-ds li{display:grid;grid-template-columns:18px minmax(0,1fr);gap:6px;line-height:1.5}
+.bc-chia{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--line)}.bc-chia i{display:block;height:100%}
+@media(max-width:760px){.bc-dau{grid-template-columns:1fr}}
+@media(max-width:560px){.bc-lien{display:none}}

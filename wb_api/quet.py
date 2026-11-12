@@ -2,7 +2,9 @@
 data/do/<nguon>/<YYYY-MM>.jsonl (mỗi dòng 1 lượt quét, mã hoá) để báo cáo tổng hợp.
 
 Bài đo mỗi giờ:  health (không khoá) · me · companies · company · latest statement · statements (2 trang, đo phân trang)
-                 · statement full · versions · filings · events · lỗi 400 (kỳ sai) · lỗi 404 · lỗi 401 (khoá sai)
+                 · statement full · versions · filings · events · news (danh sách, chi tiết, theo mã; khi gói có quyền news)
+                 · lỗi 400 (kỳ sai) · lỗi 404 · lỗi 401 (khoá sai)
+Máy đo mất mạng ngay từ /me (DNS lỗi...) -> không ghi số đo của lượt đó (trước đây lỗi mạng của máy đo bị tính nhầm thành lỗi API).
 Mỗi ngày 1 lần:  bắn dồn để kiểm giới hạn tốc độ (429 + Retry-After + header RateLimit có đúng), kiểm bảo mật
                  (TLS, HSTS, khoá qua query string phải bị từ chối, http -> https).
 """
@@ -111,6 +113,18 @@ def _chat_luong(sts: list) -> dict:
     return out
 
 
+def _tin(items: list[dict]) -> dict:
+    """Độ tươi + độ đầy đủ của tin: Wealbee phát hiện tin (detected_at) chậm bao lâu so với bài gốc đầu tiên (first_published_at)."""
+    tre = []
+    for x in items:
+        a, b = _thoi_gian(x.get("first_published_at")), _thoi_gian(x.get("detected_at"))
+        if a and b and x.get("id"):
+            tre.append([str(x["id"])[:8], round((b - a).total_seconds() / 60, 1)])
+    return {"n": len(items), "tre": tre, "co_tom_tat": sum(bool(x.get("summary")) for x in items),
+            "co_phan_tich": sum(bool((x.get("analysis") or {}).get("available")) for x in items),
+            "co_ma": sum(bool(x.get("tickers")) for x in items), "nguon_chinh_thuc": sum((x.get("official_source_count") or 0) > 0 for x in items)}
+
+
 def goi_thuc_te(me: dict) -> str:
     """Gói thật của khoá theo quyền trong /me: gói Free = tự phục vụ (không hiển thị lại, không điểm sức khoẻ, 30 request/phút).
     Quyền tính theo TÀI KHOẢN: tài khoản được nâng lên hợp đồng thì mọi khoá cũ của nó cũng thành gói Doanh nghiệp."""
@@ -136,6 +150,8 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         return l
     try:
         me = g("me", "/me")
+        if me.loi_mang and not me.status:                                    # máy đo mất mạng: không phải lỗi API, bỏ cả lượt
+            return {"mat_mang": me.loi_mang[:120]}
         if me.status == 401:                                                 # khoá sai / đã thu hồi: lỗi cấu hình, không phải lỗi API
             return {"loi_cau_hinh": f"{GOI[goi]} bị từ chối (401: khoá sai hoặc đã thu hồi) -> sửa .env / GitHub secret"}
         if isinstance(me.json, dict):
@@ -180,6 +196,13 @@ def bo_do(goi: str, khoa: str, gio: int) -> dict:
         ghi["lech_ky"] = sorted(set(x for x in lk if x))
         ghi["chat_luong"] = _chat_luong(ds(s1.json) + [e["data"]["statement"] for e in ds(ev.json) if isinstance(e, dict)
                                                        and isinstance((e.get("data") or {}).get("statement"), dict)])
+        if "news" in ((ghi.get("me") or {}).get("products") or []):          # Data API có tin tức từ 11/2026 (gói có quyền news)
+            n = g("news", "/news", {"limit": 50})
+            tin = [x for x in ds(n.json) if isinstance(x, dict)]
+            if tin:
+                ghi["tin"] = _tin(tin)
+                g("news_detail", f"/news/{tin[0].get('id')}")
+            g("news_ma", "/news", {"ticker": VN30[gio % len(VN30)], "limit": 20})
         g("err_400", "/statements", {"period": "2026Q9"}, kv=400)
         g("err_404", "/statements/FPT.2015Q1", kv=404)                      # mã có thật, kỳ không có số -> phải 404
         g("info_ma_la", "/statements/ZZZZ.2026Q1", kv=404)                  # mã không tồn tại: ghi nhận, không chấm điểm
@@ -238,7 +261,7 @@ def ban_don(goi: str, khoa: str) -> dict:
     try:
         dau = wb.goi("burst", "/me")
         q = dau.rl.get("q") or 30
-        toi_da = min(q + 5, 60)
+        toi_da = min(q + 5, 130)                                       # vượt giới hạn vài request để thấy 429 thật
         lu.append(dau)
         wb.nhip = 0
         t0 = time.perf_counter()
@@ -317,6 +340,9 @@ def chay(nguon: str) -> list[dict]:
             continue
         try:
             rec.update(bo_do(goi, khoa, gio))
+            if rec.get("mat_mang") or rec.get("sai_goi") or rec.get("loi_cau_hinh"):
+                out.append(rec)
+                continue
             if now.hour == 2 or os.environ.get("QUET_HANG_NGAY") or not os.environ.get("CO_DO_PHU"):
                 rec["phu"] = do_phu(khoa, goi)
             if (now.hour == 2 or os.environ.get("QUET_HANG_NGAY")) and nguon == "github":

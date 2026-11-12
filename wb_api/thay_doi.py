@@ -18,6 +18,7 @@ from . import ma_hoa
 
 ROOT = Path(__file__).resolve().parent.parent
 TRANG_THAI = ROOT / "data" / "thay_doi.enc"
+PHIEN_BAN = 2                                   # cách tính báo cáo (2: viết lại 12/11/2026, loại lỗi mạng của máy đo)
 RA = ROOT / "docs" / "bao-cao" / "thay_doi.enc"
 LOI_CO_Y = ("err_400", "err_404", "err_401", "info_ma_la")
 TEN_GOI = {"free": "Gói Free", "dn": "Gói Doanh nghiệp"}
@@ -100,7 +101,7 @@ def chup(bc: dict) -> dict:
     out = {}
     for goi, g in bc["goi"].items():
         out[goi] = {"diem": g["diem"], "xep": {t["ma"]: [t["ten"], t["xep"], t["gia_tri"], t["don_vi"]] for t in g["tieu_chi"]},
-                    "so_cong_ty": g["tong"].get("so_cong_ty"), "lech_ky": g["tong"].get("lech_ky") or []}
+                    "so_cong_ty": (g.get("phu") or {}).get("so_cong_ty"), "lech_ky": g.get("lech_ky") or []}
     return out
 
 
@@ -108,9 +109,26 @@ def cap_nhat(rs: list[dict], bc: dict) -> dict | None:
     """Gọi sau mỗi lần dựng báo cáo; có thay đổi đáng kể thì ghi 1 bản báo cáo mới. Trả về bản mới (hoặc None)."""
     if not TRANG_THAI.exists():                                       # lần đầu: chỉ ghi mốc, chưa có gì để so
         TRANG_THAI.parent.mkdir(parents=True, exist_ok=True)
-        TRANG_THAI.write_text(json.dumps(ma_hoa.goi({"tinh_trang": tinh_trang(rs), "chup": chup(bc)})), encoding="utf-8")
+        TRANG_THAI.write_text(json.dumps(ma_hoa.goi({"tinh_trang": tinh_trang(rs), "chup": chup(bc), "phien_ban": PHIEN_BAN})),
+                              encoding="utf-8")
         return None
     tt = _doc(TRANG_THAI, {"tinh_trang": {}, "chup": None})
+    if tt.get("phien_ban") != PHIEN_BAN:                              # đổi cách tính: ghi mốc mới, không so với số tính theo cách cũ
+        ban = {"luc": datetime.now(timezone.utc).isoformat(timespec="seconds"), "cai_thien": [], "te_di": [], "diem": {},
+               "diem_hien_tai": {g: v["diem"] for g, v in chup(bc).items()}, "loai_ban": "ghi_chu",
+               "tieu_de": "Đổi cách tính báo cáo: không còn tính lỗi mạng của máy đo thành lỗi API",
+               "ghi_chu": ["Lỗi mạng phía máy đo (DNS, máy mất mạng) được loại khỏi phép tính; trước đây chúng bị tính thành lỗi API "
+                           "và kéo điểm xuống.",
+                           "Độ trễ chấm theo góc đo ở Việt Nam; độ tươi và tỷ lệ kiểm chứng tính trên toàn bộ BCTC đã đồng bộ.",
+                           "Gói Free chưa được chấm vì từ 08/11 không còn khoá Free hợp lệ.",
+                           "Các bản thay đổi bên dưới mốc này dùng cách tính cũ."]}
+        ds = _doc(RA, [])
+        ds.insert(0, ban)
+        RA.parent.mkdir(parents=True, exist_ok=True)
+        RA.write_text(json.dumps(ma_hoa.goi(ds[:300]), separators=(",", ":")), encoding="utf-8")
+        TRANG_THAI.write_text(json.dumps(ma_hoa.goi({"tinh_trang": tinh_trang(rs), "chup": chup(bc), "phien_ban": PHIEN_BAN})),
+                              encoding="utf-8")
+        return ban
     cu, moi = tt.get("tinh_trang") or {}, tinh_trang(rs)
     cai, te = [], []
     for k, v in moi.items():
@@ -148,5 +166,5 @@ def cap_nhat(rs: list[dict], bc: dict) -> dict | None:
         RA.parent.mkdir(parents=True, exist_ok=True)
         RA.write_text(json.dumps(ma_hoa.goi(ds[:300]), separators=(",", ":")), encoding="utf-8")
     TRANG_THAI.parent.mkdir(parents=True, exist_ok=True)
-    TRANG_THAI.write_text(json.dumps(ma_hoa.goi({"tinh_trang": moi, "chup": sau})), encoding="utf-8")
+    TRANG_THAI.write_text(json.dumps(ma_hoa.goi({"tinh_trang": moi, "chup": sau, "phien_ban": PHIEN_BAN})), encoding="utf-8")
     return ban
