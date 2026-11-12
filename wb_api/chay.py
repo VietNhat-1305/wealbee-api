@@ -86,7 +86,8 @@ def main(argv=None) -> int:
             print(f"{r['goi']}: {sum(bool(l.get('dung')) for l in r['luot'])}/{len(r['luot'])} đúng kỳ vọng, "
                   f"p50 {round(ms[len(ms) // 2]) if ms else '-'} ms" + (f" | lỗi: {r['loi']}" if r.get("loi") else ""))
         else:
-            print(f"{r['goi']}: {r.get('bo_qua') or r.get('sai_goi') or r.get('loi_cau_hinh') or r.get('loi')}")
+            print(f"{r['goi']}: " + (f"máy đo mất mạng, bỏ lượt này ({r['mat_mang'][:60]})" if r.get("mat_mang") else
+                                     str(r.get('bo_qua') or r.get('sai_goi') or r.get('loi_cau_hinh') or r.get('loi'))))
     if a.dong_bo or a.nguon == "github":
         for d in dong_bo.chay():
             print("đồng bộ", json.dumps(d, ensure_ascii=False))
