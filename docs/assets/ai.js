@@ -237,6 +237,32 @@
       tong_so_ma_khop: ds.length, ds: ds.slice(0, n).map(x => ({...x, nganh: NGANH[x.nganh] || x.nganh}))});
   }
 
+  // Điểm đa yếu tố + tín hiệu của nền tảng Phân tích đầu tư (docs/dau-tu, dựng mỗi giờ bởi wb_api/dau_tu.py)
+  let DT_CACHE = null;
+  async function diemDauTu({ma, so_luong}) {
+    DT_CACHE ||= Promise.all([taiJson('../dau-tu/data/diem.json'), taiJson('../dau-tu/data/tin_hieu.json')]);
+    const [d, th] = await DT_CACHE;
+    if (!d) return {loi: 'Chưa có dữ liệu chấm điểm đầu tư.'};
+    const YT = ['tang_truong', 'hieu_qua', 'an_toan_tai_chinh', 'chat_luong_loi_nhuan', 'tin_tuc'];
+    const cach = `Mỗi chỉ số xếp phân vị 0-100 trong cùng nhóm ngành (50 = trung vị); điểm yếu tố = trung bình phân vị các chỉ số; điểm tổng = trung bình có trọng số ${JSON.stringify(d.trong_so)}. Chỉ số: dt_q/ln_q/dt_lk/ln_lk = tăng trưởng % so cùng kỳ (300 là trần), roe/roa %, no_vcsh/vay_vcsh lần, cfo_ln = LCTT kinh doanh / LNST luỹ kế, tin = sắc thái tin 30 ngày (-1..1).`;
+    const m = chuanMa(ma), n = Math.min(30, Math.max(1, +so_luong || 10));
+    if (!m) {
+      const top = Object.entries(d.ds).filter(([, v]) => v.d != null).sort((a, b) => b[1].d - a[1].d).slice(0, n)
+        .map(([k, v]) => ({ma: k, ten: v.t, nganh: NGANH[v.n] || v.n, diem_tong: v.d}));
+      return gon({cach_cham: cach, cap_nhat: d.cap_nhat, diem_tong_cao_nhat: top,
+        tin_hieu_moi_nhat: (th?.ds || []).slice(0, n).map(x => ({ma: x.ma, luc: x.luc, tin_hieu: x.tieu_de, chi_tiet: x.chi_tiet, link: x.link}))});
+    }
+    const v = d.ds[m];
+    if (!v) return {loi: `Chưa có điểm đầu tư cho mã ${m}.`, goi_y: timCty(ma).slice(0, 5)};
+    const tv = d.trung_vi?.[v.n] || {};
+    return gon({ma: m, ten: v.t, ky_bctc: v.k, trang_thai_bctc: v.tt, nhom_nganh: NGANH[v.n] || v.n, cach_cham: cach,
+      diem_tong: v.d, diem_tong_trung_vi_nganh: tv.tong,
+      diem_yeu_to: Object.fromEntries(YT.map((k, i) => [k, v.f.at(i)])),
+      diem_yeu_to_trung_vi_nganh: {tang_truong: tv.tang_truong, hieu_qua: tv.hieu_qua, an_toan_tai_chinh: tv.an_toan, chat_luong_loi_nhuan: tv.chat_luong, tin_tuc: tv.tin_tuc},
+      chi_so: v.m, chi_so_trung_vi_nganh: Object.fromEntries(Object.keys(v.m).filter(k => tv[k] != null).map(k => [k, tv[k]])),
+      tin_hieu_30_ngay: (th?.ds || []).filter(x => x.ma === m).slice(0, 8).map(x => ({luc: x.luc, tin_hieu: x.tieu_de, chi_tiet: x.chi_tiet, link: x.link}))});
+  }
+
   const CONG_CU = [
     {name: 'tim_cong_ty', description: 'Tìm mã cổ phiếu theo tên hoặc một phần tên công ty (gõ không dấu được). Dùng khi người dùng nói tên công ty mà không nói mã.',
       parameters: {type: 'object', properties: {tu_khoa: {type: 'string', description: 'Tên công ty hoặc mã, ví dụ "vinamilk", "hoa phat", "FPT"'}}, required: ['tu_khoa']}},
@@ -247,6 +273,8 @@
         tu_khoa: {type: 'string', description: 'Lọc theo từ khoá trong tiêu đề/tóm tắt (tuỳ chọn)'}, so_tin: {type: 'integer', description: 'Số tin, mặc định 12, tối đa 30'}}}},
     {name: 'gia_co_phieu', description: 'Lấy giá đóng cửa gần nhất và biến động 1 tuần/1/3/6/12 tháng, đỉnh/đáy 52 tuần, khối lượng trung bình 20 phiên, giá cuối mỗi tháng.',
       parameters: {type: 'object', properties: {ma: {type: 'string'}}, required: ['ma']}},
+    {name: 'diem_dau_tu', description: 'Điểm phân tích đầu tư đa yếu tố (0-100, so với cùng ngành) của một mã: tăng trưởng, hiệu quả, an toàn tài chính, chất lượng lợi nhuận, tin tức, kèm chỉ số gốc, trung vị ngành và các tín hiệu 30 ngày (lợi nhuận đột biến, dòng tiền âm, nợ vay tăng, tin tích cực/tiêu cực). Bỏ trống "ma" để lấy các mã điểm tổng cao nhất và tín hiệu mới nhất toàn thị trường.',
+      parameters: {type: 'object', properties: {ma: {type: 'string', description: 'Mã cổ phiếu (tuỳ chọn)'}, so_luong: {type: 'integer', description: 'Số mã / tín hiệu khi không có mã, mặc định 10'}}}},
     {name: 'loc_co_phieu', description: 'Lọc và xếp hạng các mã có BCTC trên web theo số liệu quý gần nhất (điểm sức khoẻ tài chính, doanh thu, LNST, biên LNST). Dùng cho câu hỏi kiểu "top", "mã nào tốt nhất ngành", "lọc cổ phiếu".',
       parameters: {type: 'object', properties: {
         nganh: {type: 'string', enum: ['corporate', 'bank', 'securities', 'insurance'], description: 'corporate = doanh nghiệp thường, bank = ngân hàng, securities = chứng khoán, insurance = bảo hiểm'},
@@ -255,9 +283,10 @@
         thu_tu: {type: 'string', enum: ['giam', 'tang']}, so_luong: {type: 'integer', description: 'mặc định 10, tối đa 40'},
         chi_lai: {type: 'boolean', description: 'chỉ lấy mã có LNST quý > 0'}, diem_toi_thieu: {type: 'number'}}}},
   ];
-  const CHAY = {tim_cong_ty: a => ({ket_qua: timCty(a.tu_khoa)}), bao_cao_tai_chinh: bctc, tin_tuc: tinTuc, gia_co_phieu: giaCp, loc_co_phieu: locCp};
+  const CHAY = {tim_cong_ty: a => ({ket_qua: timCty(a.tu_khoa)}), bao_cao_tai_chinh: bctc, tin_tuc: tinTuc, gia_co_phieu: giaCp, loc_co_phieu: locCp, diem_dau_tu: diemDauTu};
   const MO_TA = {tim_cong_ty: a => `Tìm “${a.tu_khoa}”`, bao_cao_tai_chinh: a => `Đọc BCTC ${chuanMa(a.ma)}`,
-    tin_tuc: a => a.ma ? `Đọc tin ${chuanMa(a.ma)}` : 'Đọc tin thị trường', gia_co_phieu: a => `Lấy giá ${chuanMa(a.ma)}`, loc_co_phieu: () => 'Lọc cổ phiếu'};
+    tin_tuc: a => a.ma ? `Đọc tin ${chuanMa(a.ma)}` : 'Đọc tin thị trường', gia_co_phieu: a => `Lấy giá ${chuanMa(a.ma)}`, loc_co_phieu: () => 'Lọc cổ phiếu',
+    diem_dau_tu: a => a.ma ? `Đọc điểm đầu tư ${chuanMa(a.ma)}` : 'Đọc tín hiệu đầu tư'};
 
   function heThong() {
     const homNay = new Date().toLocaleDateString('vi-VN', {weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh'});
@@ -269,6 +298,7 @@ Cách làm:
 - Trong BCTC: "quy" = giá trị quý, "quy_cung_ky" = cùng quý năm trước, "luy_ke" = luỹ kế từ đầu năm, "cuoi_ky"/"dau_nam" = số dư cân đối. Đơn vị tỷ đồng. Dùng luôn "ty_le_tinh_san", không tự tính lại.
 - Luôn ghi kỳ báo cáo (VD Q3/2026) cạnh con số. Kỳ có trạng thái "cần soát lại" thì nhắc người dùng thận trọng.
 - Phân tích một mã: (1) Kết luận nhanh 2-3 câu; (2) Kết quả kinh doanh và tăng trưởng; (3) Biên lợi nhuận, hiệu quả (ROE/ROA); (4) Sức khoẻ tài chính: nợ, vay, dòng tiền; (5) Tin tức đáng chú ý và tác động; (6) Giá và vị thế giá; (7) Rủi ro / điều cần theo dõi. Khi cần đủ bức tranh thì gọi cả bao_cao_tai_chinh, tin_tuc, gia_co_phieu (gọi song song được).
+- Khi phân tích một mã, gọi thêm diem_dau_tu để có điểm 5 yếu tố so với ngành và các tín hiệu gần đây; nêu rõ điểm là phân vị trong ngành.
 - So sánh nhiều mã: dùng bảng markdown.
 - Dẫn link tin khi nhắc tới tin, dạng [tiêu đề ngắn](link).
 - Có thể nêu nhận định tham khảo kèm lý do, nhưng không khẳng định chắc chắn nên mua/bán. Kết thúc bằng 1 dòng nghiêng ngắn: thông tin tham khảo, không phải khuyến nghị đầu tư.

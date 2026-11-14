@@ -101,6 +101,11 @@ def main(argv=None) -> int:
             print("vietstock", json.dumps(vietstock.chay(), ensure_ascii=False))
         except Exception as e:  # noqa: BLE001
             print("vietstock lỗi:", str(e)[:200])
+        try:                                                         # nền tảng Phân tích đầu tư (docs/dau-tu): điểm + tín hiệu
+            from . import dau_tu
+            print("phân tích đầu tư", json.dumps(dau_tu.chay(), ensure_ascii=False))
+        except Exception as e:  # noqa: BLE001 - lỗi phần này không chặn bộ quét / báo cáo
+            print("phân tích đầu tư lỗi:", str(e)[:200])
     if not a.khong_bao_cao:
         bc = bao_cao.tao()
         print("báo cáo:", {k: v["diem"] for k, v in bc["goi"].items()}, "| lượt quét:", bc["so_luot"])
