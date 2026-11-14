@@ -233,7 +233,8 @@ def tong_hop_goi(rs: list[dict]) -> dict:
     return {"tong": tong, "theo_nguon": theo_nguon, "goc_cham": goc,
             "quyen": next((r.get("me") for r in reversed(rs) if r.get("me")), None),
             "phu": phu, "lech_ky": lk,
-            "ban_don": next((r["ban_don"] for r in reversed(co) if r.get("ban_don")), None),
+            "ban_don": next((r["ban_don"] for r in reversed(co) if (r.get("ban_don") or {}).get("luot_429")),   # ưu tiên lần đã chạm 429
+                            next((r["ban_don"] for r in reversed(co) if r.get("ban_don")), None)),
             "tin": {"n": len(tin), "tre": _thong_ke(list(tin.values())) if tin else {"n": 0},
                     "trong_15p": round(100 * sum(v <= 15 for v in tin.values()) / len(tin), 1) if tin else None,
                     "trong_60p": round(100 * sum(v <= 60 for v in tin.values()) / len(tin), 1) if tin else None,

@@ -261,7 +261,7 @@ def ban_don(goi: str, khoa: str) -> dict:
     try:
         dau = wb.goi("burst", "/me")
         q = dau.rl.get("q") or 30
-        toi_da = min(int(q * 1.4) + 10, 220)                           # hạn mức kiểu thùng token (hồi ~q/60 lượt/giây): bắn quá q đủ để thấy 429
+        toi_da = min(q * 3, 360)                                       # từ Mỹ ~4 request/giây: hạn mức hồi ~2/giây nên cần ~2q mới chạm 429                           # hạn mức kiểu thùng token (hồi ~q/60 lượt/giây): bắn quá q đủ để thấy 429
         lu.append(dau)
         wb.nhip, wb.tu_giu_nhip = 0, False             # bắn liên tục, không tự giãn nhịp (trước 13/11 bị giãn nên không bao giờ chạm 429)
         t0 = time.perf_counter()
