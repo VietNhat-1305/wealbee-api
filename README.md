@@ -24,6 +24,14 @@ Khoá Gemini lấy ở https://aistudio.google.com/apikey, ghi vào `.env` (`GEM
 - Model được chọn tự động: Flash mới nhất, hết lượt miễn phí thì chuyển sang Flash-Lite. Có thể chọn tay ở nút ⚙.
 - Nên giới hạn khoá theo website (Google Cloud Console → Credentials → Website restrictions: `https://vietnhat-1305.github.io/*`).
 
+## Theo dõi sức khoẻ SEO wealbee.com (`wb_seo/`, `docs/seo/`)
+GitHub Actions `seo.yml` chạy mỗi ngày lúc 08:15 giờ Việt Nam. Mỗi lần chạy gồm:
+- 19 phép kiểm trong 5 nhóm: khả năng được tìm thấy, thẻ trên trang, tốc độ di động (Chrome giả lập điện thoại), link nguồn trích dẫn, bảo mật.
+- Chấm điểm 0–100, lưu lịch sử mã hoá vào `data/seo/`, dựng trang `docs/seo/` (cần mật khẩu nội bộ).
+- Khi có chỉ số chuyển sang Lỗi hoặc điểm tụt từ 5 trở lên, mở hoặc bình luận issue "Cảnh báo sức khoẻ SEO" (nhãn `seo-canh-bao`).
+
+Chạy tay: `python -m wb_seo.chay` (thêm `--khong-toc-do` để chạy nhanh). Ngưỡng và căn cứ từng chỉ số: `wb_seo/chi_so.py`.
+
 ## Chạy tự động
 | Ở đâu | Khi nào | Việc |
 |---|---|---|

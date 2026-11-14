@@ -1,0 +1,46 @@
+name: Suc khoe SEO
+on:
+  schedule:
+    - cron: "15 1 * * *"       # 08:15 giờ Việt Nam mỗi ngày (GitHub có thể trễ vài phút)
+  workflow_dispatch: {}
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: quet-wealbee          # chung nhóm với workflow quét API: không đẩy commit chồng nhau
+  cancel-in-progress: false
+jobs:
+  seo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt playwright
+      - run: python -m playwright install --with-deps chromium
+      - name: Kiem tra suc khoe SEO
+        env:
+          MAT_KHAU_NOI_BO: ${{ secrets.MAT_KHAU_NOI_BO }}
+          SEO_CANH_BAO: ${{ runner.temp }}/canh_bao_moi.md
+        run: python -m wb_seo.chay
+      - name: Canh bao (issue tren GitHub)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          F: ${{ runner.temp }}/canh_bao_moi.md
+        run: |
+          [ -s "$F" ] || { echo "khong co canh bao moi"; exit 0; }
+          gh label create seo-canh-bao --color B60205 --description "Canh bao suc khoe SEO" 2>/dev/null || true
+          so=$(gh issue list --label seo-canh-bao --state open --json number --jq '.[0].number')
+          if [ -n "$so" ]; then gh issue comment "$so" --body-file "$F"; else gh issue create --title "Cảnh báo sức khoẻ SEO wealbee.com" --label seo-canh-bao --body-file "$F"; fi
+      - name: Luu ket qua
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/seo docs/seo
+          if git diff --cached --quiet; then echo "khong co thay doi"; exit 0; fi
+          git commit -q -m "SEO $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3 4; do git pull -q --rebase && git push -q && exit 0; sleep $((i*5)); done
+          exit 1

@@ -96,3 +96,4 @@ footer{color:var(--mut2);font-size:12.5px;padding:30px 0 40px}
 .bc-chia{display:flex;height:14px;border-radius:99px;overflow:hidden;background:var(--line)}.bc-chia i{display:block;height:100%}
 @media(max-width:760px){.bc-dau{grid-template-columns:1fr}}
 @media(max-width:560px){.bc-lien{display:none}}
+.grid>*{min-width:0}
