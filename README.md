@@ -24,6 +24,29 @@ Khoá Gemini lấy ở https://aistudio.google.com/apikey, ghi vào `.env` (`GEM
 - Model được chọn tự động: Flash mới nhất, hết lượt miễn phí thì chuyển sang Flash-Lite. Có thể chọn tay ở nút ⚙.
 - Nên giới hạn khoá theo website (Google Cloud Console → Credentials → Website restrictions: `https://vietnhat-1305.github.io/*`).
 
+## Phân tích đầu tư chủ động (docs/dau-tu)
+Trang [dau-tu/](https://vietnhat-1305.github.io/wealbee-api/dau-tu/) giúp ra quyết định đầu tư thay vì chỉ tra cứu. `wb_api/dau_tu.py` chạy mỗi giờ sau bước đồng bộ trên GitHub Actions và dựng `docs/dau-tu/data/` từ ba nguồn: BCTC đã đồng bộ, `/statements?updated_since=` và `/news` của Data API (gói Doanh nghiệp). Tin được giữ tăng dần 30 ngày trong `data/dau_tu_tin.json`.
+- **Điểm 5 yếu tố (0-100):** mỗi chỉ số được xếp phân vị trong cùng nhóm ngành (doanh nghiệp, ngân hàng, chứng khoán, bảo hiểm). Điểm yếu tố là trung bình phân vị các chỉ số có số liệu.
+  - Tăng trưởng: DT/LNST quý và luỹ kế so với cùng kỳ. Ngân hàng không có doanh thu nên dùng thu nhập hoạt động.
+  - Hiệu quả: ROE, ROA năm hoá, biên gộp, biên ròng (biên chỉ tính cho doanh nghiệp thường).
+  - An toàn tài chính: nợ phải trả/VCSH, vay/VCSH, điểm sức khoẻ Wealbee.
+  - Chất lượng lợi nhuận: LCTT kinh doanh / LNST luỹ kế (chỉ doanh nghiệp thường).
+  - Tin tức: sắc thái tin 30 ngày, xếp trên toàn thị trường.
+  - Điểm tổng có trọng số 25 / 25 / 20 / 15 / 15, chuẩn hoá lại khi thiếu yếu tố.
+- **Tín hiệu (30 ngày, mới nhất trước):**
+  - LNST quý ±30% so với cùng kỳ (nền ≥ 5 tỷ); chuyển lãi/lỗ;
+  - điểm sức khoẻ đổi ≥ 2;
+  - có lãi nhưng LCTT kinh doanh âm hơn 50% LNST;
+  - vay nợ tăng ≥ 50% và ≥ 200 tỷ từ đầu năm;
+  - tin tích cực hoặc tiêu cực gắn mã trong 3 ngày.
+  - Mỗi tín hiệu có một câu giải thích kèm số và link nguồn.
+- **Trang có ba tab:**
+  - Tín hiệu (lọc theo mức độ, loại, nguồn, mã đang theo dõi).
+  - Bộ lọc: các preset Tăng trưởng mạnh, Chất lượng cao, An toàn tài chính, Tin tức tích cực, hoặc tuỳ chỉnh từng yếu tố. Có thêm giá 3 tháng từ VNDirect.
+  - Danh mục theo dõi, lưu trên trình duyệt.
+  - Bấm vào một mã sẽ mở thẻ quyết định: 5 yếu tố so với trung vị ngành, điểm mạnh và rủi ro kèm số, giá 12 tháng, tín hiệu, tin, và nút trợ lý AI. Trợ lý AI có thêm công cụ `diem_dau_tu`.
+- Chạy tay: `python -m wb_api.dau_tu` (thêm `--khong-api` để chỉ dựng lại từ dữ liệu sẵn có).
+
 ## Chạy tự động
 | Ở đâu | Khi nào | Việc |
 |---|---|---|
