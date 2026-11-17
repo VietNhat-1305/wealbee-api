@@ -244,11 +244,14 @@ def kiem_bao_mat() -> dict:
     return out
 
 
-def kiem_trang(c: httpx.Client, url: str) -> dict:
-    r, e, ms = lay(c, url)
+def kiem_trang(c: httpx.Client, url: str, theo: bool = False) -> dict:
+    """theo=True: đi theo chuyển hướng (VD /?a=<id> → 301 → /tin/<slug>-<id>) và đo trang đích."""
+    r, e, ms = lay(c, url, theo=theo)
     if e:
         return {"url": url, "loi": e}
     out = {"url": url, "status": r.status_code, "ms": round(ms), "chuyen_toi": r.headers.get("location")}
+    if theo and r.history:
+        out.update({"url_cuoi": str(r.url), "so_lan_chuyen": len(r.history), "ma_chuyen": [h.status_code for h in r.history]})
     if r.status_code == 200 and "html" in r.headers.get("content-type", ""):
         out.update(doc_trang(r.text))
         out.pop("links", None)
@@ -262,7 +265,7 @@ def chay() -> dict:
     bai = bai_moi(c)
     trang = {"trang_chu": kiem_trang(c, GOC + "/")}
     if bai:
-        trang["bai_viet"] = kiem_trang(c, f"{GOC}/?a={bai[0]['id']}")
+        trang["bai_viet"] = kiem_trang(c, f"{GOC}/?a={bai[0]['id']}", theo=True)   # sau khi web có URL /tin/... thì đo trang đích
         trang["bai_chia_se"] = kiem_trang(c, f"{GOC}/share/{bai[0]['id']}")
     for ten in ("privacy.html", "terms.html"):
         trang[ten] = kiem_trang(c, f"{GOC}/{ten}")

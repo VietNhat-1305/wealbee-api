@@ -69,7 +69,8 @@ def main(argv=None) -> int:
         return 0
     kq = kiem_tra.chay()
     if not a.khong_toc_do:
-        bai = ((kq.get("trang") or {}).get("bai_viet") or {}).get("url")
+        bv = (kq.get("trang") or {}).get("bai_viet") or {}
+        bai = bv.get("url_cuoi") or bv.get("url")
         try:
             from . import toc_do
             kq["toc_do"] = toc_do.do({"trang_chu": kiem_tra.GOC + "/", **({"bai_viet": bai} if bai else {})})
