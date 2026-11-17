@@ -1,11 +1,13 @@
-// Trang kế hoạch SEO (nội dung markdown mã hoá bằng mật khẩu nội bộ, dựng bằng wb_seo/ke_hoach.py).
-// Bộ dựng markdown gọn: tiêu đề, đoạn, **đậm**, `mã`, link, ảnh (anh:<khoá> trong gói), danh sách lồng 1 cấp, bảng, khối mã.
+// Trang tài liệu SEO nội bộ (kế hoạch, hướng dẫn sửa): markdown mã hoá bằng mật khẩu nội bộ, dựng bằng wb_seo/ke_hoach.py.
+// Tệp gói và tên cổng lấy từ <body data-goi data-ten> (mặc định: kế hoạch SEO).
+// Bộ dựng markdown gọn: tiêu đề, đoạn, **đậm**, *nghiêng*, `mã`, link, ảnh (anh:<khoá> trong gói), danh sách lồng 1 cấp, bảng, khối mã.
 const NHAN_MUC = {'Nghiêm trọng': 'md-nghiem', 'Cao': 'md-cao', 'Trung bình': 'md-tb', 'Thấp': 'md-thap',
   'Chưa làm': 'md-chua', 'Đang làm': 'md-dang', 'Xong': 'md-xong'};
 
-function dong(t) {                                     // định dạng trong dòng (đã escape trước)
-  return t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+function dong(t) {                                     // định dạng trong dòng (đã escape trước); không đụng vào phần `mã`
+  return t.split(/(`[^`]+`)/).map((s, i) => i % 2 ? `<code>${s.slice(1, -1)}</code>` : s
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![*\w])/g, '$1<i>$2</i>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')).join('');
 }
 
 function dung(md, anh) {
@@ -56,12 +58,12 @@ function dung(md, anh) {
 }
 
 async function main() {
-  const khung = $('#app');
-  const r = await fetch('ke_hoach.enc', {cache: 'no-store'});
-  if (!r.ok) { khung.innerHTML = '<div class="card empty">Chưa có bản kế hoạch.</div>'; return; }
-  const {du_lieu: kh} = await congMatKhau('ke_hoach.enc', khung, 'Kế hoạch SEO Wealbee');
+  const khung = $('#app'), goi = document.body.dataset.goi || 'ke_hoach.enc';
+  const r = await fetch(goi, {cache: 'no-store'});
+  if (!r.ok) { khung.innerHTML = '<div class="card empty">Chưa có bản tài liệu.</div>'; return; }
+  const {du_lieu: kh} = await congMatKhau(goi, khung, document.body.dataset.ten || 'Kế hoạch SEO Wealbee');
   khung.innerHTML = `<section class="hero"><span class="pill">Cập nhật ${tg(kh.luc)}</span><h1 style="margin-top:12px">${esc(kh.tieu_de)}</h1>
-    <p class="mut">Lỗi kỹ thuật và cách sửa, cụm chủ đề từ khoá, tối ưu cho công cụ tìm kiếm AI, bộ chỉ số theo dõi và lộ trình triển khai.</p></section>
+    <p class="mut">${esc(kh.mo_ta || 'Lỗi kỹ thuật và cách sửa, cụm chủ đề từ khoá, tối ưu cho công cụ tìm kiếm AI, bộ chỉ số theo dõi và lộ trình triển khai.')}</p></section>
     <article class="card kh">${dung(kh.md, kh.anh || {})}</article>`;
 }
 main();

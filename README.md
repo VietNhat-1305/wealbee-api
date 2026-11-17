@@ -32,7 +32,7 @@ GitHub Actions `seo.yml` chạy mỗi ngày lúc 08:15 giờ Việt Nam. Mỗi l
 
 Chạy tay: `python -m wb_seo.chay` (thêm `--khong-toc-do` để chạy nhanh).
 
-Kế hoạch SEO (`docs/seo/ke-hoach/`, mã hoá vì có điểm yếu bảo mật): cập nhật bằng `python -m wb_seo.ke_hoach <file.md> --anh cum=<ảnh>.png lo_trinh=<ảnh>.png`. Ngưỡng và căn cứ từng chỉ số: `wb_seo/chi_so.py`.
+Kế hoạch SEO (`docs/seo/ke-hoach/`, mã hoá vì có điểm yếu bảo mật): cập nhật bằng `python -m wb_seo.ke_hoach <file.md> --anh cum=<ảnh>.png lo_trinh=<ảnh>.png`. Hướng dẫn kỹ thuật sửa lỗi cho đội web (`docs/seo/huong-dan/`, cũng mã hoá): `python -m wb_seo.ke_hoach <file.md> --ra docs/seo/huong-dan/huong_dan.enc --tieu-de "..." --mo-ta "..."`. Ngưỡng và căn cứ từng chỉ số: `wb_seo/chi_so.py`.
 
 ## Phân tích đầu tư chủ động (docs/dau-tu)
 Trang [dau-tu/](https://vietnhat-1305.github.io/wealbee-api/dau-tu/) giúp ra quyết định đầu tư thay vì chỉ tra cứu. `wb_api/dau_tu.py` chạy mỗi giờ sau bước đồng bộ trên GitHub Actions và dựng `docs/dau-tu/data/` từ ba nguồn: BCTC đã đồng bộ, `/statements?updated_since=` và `/news` của Data API (gói Doanh nghiệp). Tin được giữ tăng dần 30 ngày trong `data/dau_tu_tin.json`.
