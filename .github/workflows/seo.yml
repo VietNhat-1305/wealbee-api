@@ -22,20 +22,29 @@ jobs:
       - run: pip install -r requirements.txt playwright
       - run: python -m playwright install --with-deps chromium
       - name: Kiem tra suc khoe SEO
+        id: kiem
         env:
           MAT_KHAU_NOI_BO: ${{ secrets.MAT_KHAU_NOI_BO }}
           SEO_CANH_BAO: ${{ runner.temp }}/canh_bao_moi.md
         run: python -m wb_seo.chay
+      # Cảnh báo không được làm hỏng lượt đo: lỗi ở đây vẫn để bước "Luu ket qua" chạy.
       - name: Canh bao (issue tren GitHub)
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           F: ${{ runner.temp }}/canh_bao_moi.md
         run: |
           [ -s "$F" ] || { echo "khong co canh bao moi"; exit 0; }
+          cat "$F" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)" != "true" ]; then
+            echo "::warning title=Canh bao SEO::Repo dang tat Issues nen khong mo duoc issue; noi dung canh bao o phan Summary cua lan chay nay."
+            exit 0
+          fi
           gh label create seo-canh-bao --color B60205 --description "Canh bao suc khoe SEO" 2>/dev/null || true
           so=$(gh issue list --label seo-canh-bao --state open --json number --jq '.[0].number')
           if [ -n "$so" ]; then gh issue comment "$so" --body-file "$F"; else gh issue create --title "Cảnh báo sức khoẻ SEO wealbee.com" --label seo-canh-bao --body-file "$F"; fi
       - name: Luu ket qua
+        if: ${{ !cancelled() && steps.kiem.outcome == 'success' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
