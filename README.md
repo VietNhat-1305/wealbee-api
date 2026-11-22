@@ -57,6 +57,34 @@ Trang [dau-tu/](https://vietnhat-1305.github.io/wealbee-api/dau-tu/) giúp ra qu
   - Bấm vào một mã sẽ mở thẻ quyết định: 5 yếu tố so với trung vị ngành, điểm mạnh và rủi ro kèm số, giá 12 tháng, tín hiệu, tin, và nút trợ lý AI. Trợ lý AI có thêm công cụ `diem_dau_tu`.
 - Chạy tay: `python -m wb_api.dau_tu` (thêm `--khong-api` để chỉ dựng lại từ dữ liệu sẵn có).
 
+## Wealbee MCP (`wb_mcp/`)
+Máy chủ [Model Context Protocol](https://modelcontextprotocol.io) đưa Wealbee Data API vào trợ lý AI (Claude, ChatGPT, Gemini…). Hỏi bằng tiếng Việt, AI tự gọi đúng tool để lấy BCTC đã kiểm chứng, file gốc, tin tổng hợp. Mọi tool chỉ đọc; không có tool tạo, sửa, xoá.
+
+| Tool | Việc |
+|---|---|
+| `wealbee_statement_summary` | Tóm tắt một BCTC: doanh thu, lợi nhuận, tài sản, nợ, vốn chủ, lưu chuyển tiền (tỷ đồng), tăng trưởng so với cùng kỳ, biên lợi nhuận, trạng thái kiểm chứng, link file gốc |
+| `wealbee_compare_companies` | Đặt tóm tắt BCTC của 2–10 mã cạnh nhau |
+| `wealbee_search_companies`, `wealbee_get_company` | Tìm công ty; xem khoảng kỳ BCTC đang có |
+| `wealbee_get_latest_statement`, `wealbee_list_statements`, `wealbee_get_statement`, `wealbee_statement_versions` | BCTC nguyên dạng API, lọc theo mã, kỳ, trạng thái; xem tại thời điểm (`as_of`) và lịch sử phiên bản |
+| `wealbee_list_filings` | File BCTC gốc: link, SHA-256, ngày công bố |
+| `wealbee_list_news`, `wealbee_get_news` | Tin tổng hợp nhiều báo và phân tích của Wealbee |
+| `wealbee_list_events` | Thay đổi dữ liệu (BCTC mới, được sửa, tin mới) |
+| `wealbee_glossary` | Tra từ điển 490 thuật ngữ (không cần khoá) |
+| `wealbee_account_info` | Gói, hạn mức, số request đã dùng |
+
+Thêm 2 resource (`wealbee://huong-dan` giải thích các trường và quy tắc trả lời, `wealbee://tu-dien`) và 4 prompt dựng sẵn: phân tích BCTC, tin nổi bật, so sánh doanh nghiệp, viết blog Wealbee. Hướng dẫn cho AI nằm sẵn trong máy chủ: không khuyến nghị mua bán, luôn dẫn file gốc, nói rõ khi BCTC đang `needs_review`.
+
+Cài: `pip install -r wb_mcp/requirements.txt` (thư viện `mcp` 2.x, Python ≥ 3.10).
+
+**Dùng trên máy** (khoá đọc từ `.env`: `WEALBEE_API_KEY`, nếu không có thì `WEALBEE_KEY_DN`; khoá không nằm trong cấu hình Claude):
+- Claude Code: `claude mcp add wealbee -- python C:\Users\Admin\wealbee-api\wb_mcp\server.py`
+- Claude Desktop: thêm vào `claude_desktop_config.json`
+  ```json
+  {"mcpServers": {"wealbee": {"command": "python", "args": ["C:\\Users\\Admin\\wealbee-api\\wb_mcp\\server.py"]}}}
+  ```
+
+**Chạy làm máy chủ từ xa** (Streamable HTTP tại `/mcp`): `python -m wb_mcp --http --host 0.0.0.0 --port 8000`, hoặc build `docker build -f wb_mcp/Dockerfile .`. Máy chủ không giữ khoá: mỗi người dùng gửi khoá Wealbee của mình qua header `Authorization: Bearer <khoá>`, máy chủ chuyển tiếp tới data.wealbee.com. Khi chạy sau tên miền thật, đặt `WEALBEE_MCP_ALLOWED_HOSTS=mcp.wealbee.com` để bật chống DNS rebinding. Claude Code kết nối: `claude mcp add --transport http wealbee https://<tên miền>/mcp --header "Authorization: Bearer <khoá>"`.
+
 ## Chạy tự động
 | Ở đâu | Khi nào | Việc |
 |---|---|---|
