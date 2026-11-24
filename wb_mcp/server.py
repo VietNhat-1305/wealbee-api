@@ -23,9 +23,11 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import time
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -36,16 +38,18 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
-PHIEN_BAN = "0.1.0"
+PHIEN_BAN = "0.2.0"
 API = "https://data.wealbee.com/v1"
 TU_DIEN_URL = "https://wealbee.com/api/glossary"
 UA = f"wealbee-mcp/{PHIEN_BAN}"
 GOC = Path(__file__).resolve().parent
 HUONG_DAN = (GOC / "huong_dan.md").read_text(encoding="utf-8")
 TY = 1_000_000_000
+VN = timezone(timedelta(hours=7))
 
 CHE_DO = {"http": False}          # đặt True khi chạy Streamable HTTP: khi đó bắt buộc khoá từ header của người gọi
 _TU_DIEN: dict[str, Any] = {"luc": 0.0, "ds": []}
+_MAU: dict[tuple, tuple[float, list]] = {}   # (kỳ, loại hình, chỉ đã kiểm chứng) -> (lúc tải, BCTC); đệm 6 giờ
 logging.getLogger("httpx").setLevel(logging.WARNING)   # không ghi từng URL gọi API vào log
 
 CHI_DOC = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
@@ -136,6 +140,29 @@ async def _api(ctx: Context | None, duong_dan: str, params: dict | None = None, 
             await http.aclose()
 
 
+def _chuan_ky(ky: str | None) -> str | None:
+    """Nhận các cách viết kỳ hay gặp: 2026Q3, 2026-Q3, Q3/2026, Q3 2026, quý 3/2026, 3/2026, 9T/2026 -> 2026Q3."""
+    if ky is None or not str(ky).strip():
+        return None
+    x = re.sub(r"\s+", "", _bo_dau(str(ky))).upper().replace("QUY", "Q")
+    for mau in (r"(?P<y>\d{4})[-_/.]?Q(?P<q>[1-4])", r"Q(?P<q>[1-4])[-_/.]?(?P<y>\d{4})", r"(?P<q>[1-4])[-_/.](?P<y>\d{4})"):
+        m = re.fullmatch(mau, x)
+        if m:
+            return f"{m['y']}Q{m['q']}"
+    m = re.fullmatch(r"(?P<t>3|6|9|12)T[-_/.]?(?P<y>\d{4})", x)
+    if m:
+        return f"{m['y']}Q{int(m['t']) // 3}"
+    raise ToolError(f"Kỳ '{ky}' không hợp lệ. Viết dạng 2026Q3 (hoặc Q3/2026, quý 3/2026).")
+
+
+def _chuan_id(sid: str) -> str:
+    """hpg.q3/2026 -> HPG.2026Q3"""
+    if "." not in (sid or ""):
+        raise ToolError(f"Id BCTC '{sid}' không hợp lệ. Viết dạng MÃ.KỲ, VD FPT.2026Q3.")
+    ma, ky = sid.strip().split(".", 1)
+    return f"{ma.strip().upper()}.{_chuan_ky(ky)}"
+
+
 def _json(d: Any) -> str:
     return json.dumps(d, ensure_ascii=False, separators=(",", ":"))
 
@@ -181,22 +208,40 @@ def tom_tat(s: dict) -> dict:
         x = lc.get(k) or {}
         return {"ytd": _ty(x.get("ytd")), "ytd_prior_year": _ty(x.get("ytd_prior_year"))}
 
+    def bq(x):
+        """Bình quân đầu năm và cuối kỳ (xấp xỉ số dư bình quân trong kỳ)."""
+        a, b = (x or {}).get("start_of_year"), (x or {}).get("end_of_period")
+        return None if a is None or b is None or a + b <= 0 else (a + b) / 2
+
+    thang = s.get("months_ytd") or 0
+    von_me = cd.get("equity_parent") if (cd.get("equity_parent") or {}).get("end_of_period") is not None else None
+    roe_ytd = (_ty_le((kq.get("net_profit_parent") or {}).get("ytd"), bq(von_me)) if von_me
+               else _ty_le((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("equity"))))
+    roa_ytd = _ty_le((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("total_assets")))
     von = (cd.get("equity") or {}).get("end_of_period")
-    chi_so = {"liabilities_to_equity": None if not von else round(((cd.get("total_liabilities") or {}).get("end_of_period") or 0) / von, 2),
-              "borrowings_to_equity": None if not von else round(((cd.get("borrowings") or {}).get("end_of_period") or 0) / von, 2)}
+    no, vay = (cd.get("total_liabilities") or {}).get("end_of_period"), (cd.get("borrowings") or {}).get("end_of_period")
+    chi_so = {"liabilities_to_equity": None if not von or no is None else round(no / von, 2),
+              "borrowings_to_equity": None if not von or vay is None else round(vay / von, 2),
+              "roe_ytd_pct": roe_ytd, "roe_annualized_pct": None if roe_ytd is None or not thang else round(roe_ytd * 12 / thang, 1),
+              "roe_basis": "net_profit_parent / equity_parent" if von_me else "net_profit / equity (chưa có vốn chủ công ty mẹ)",
+              "roa_ytd_pct": roa_ytd, "roa_annualized_pct": None if roa_ytd is None or not thang else round(roa_ytd * 12 / thang, 1)}
     if s.get("industry_type") == "corporate":
         dt = (kq.get("revenue") or {}).get("quarter")
         chi_so["gross_margin_quarter_pct"] = _ty_le((kq.get("gross_profit") or {}).get("quarter"), dt)
         chi_so["net_margin_quarter_pct"] = _ty_le((kq.get("net_profit") or {}).get("quarter"), dt)
     kiem = s.get("checks") or []
     pv = s.get("provenance") or {}
+    kq_gon = {k: dong_kq(k) for k in ("revenue", "gross_profit", "net_profit", "net_profit_parent") if k in kq}
+    cd_gon = {k: dong_cd(k) for k in ("total_assets", "total_liabilities", "borrowings", "equity", "equity_parent", "non_controlling_interest")
+              if k in cd}
     return {
         "ticker": s.get("ticker"), "statement_id": s.get("id"), "period": s.get("period"), "period_label": s.get("period_label"),
         "months_ytd": s.get("months_ytd"), "scope": s.get("scope"), "industry_type": s.get("industry_type"),
         "status": s.get("status"), "review_reasons": s.get("review_reasons") or [], "version": s.get("version"),
         "health_score": s.get("health_score"), "unit": "tỷ đồng",
-        "income_statement": {k: dong_kq(k) for k in ("revenue", "gross_profit", "net_profit", "net_profit_parent") if k in kq},
-        "balance_sheet": {k: dong_cd(k) for k in ("total_assets", "total_liabilities", "borrowings", "equity") if k in cd},
+        "income_statement": {k: v for k, v in kq_gon.items() if v["quarter"] is not None or v["ytd"] is not None},
+        "balance_sheet": {k: v for k, v in cd_gon.items() if v["end_of_period"] is not None or v["start_of_year"] is not None},
+        "missing_fields": [k for k, v in {**kq_gon, **cd_gon}.items() if all(x is None for x in v.values())],
         "cash_flow": {k: dong_lc(k) for k in ("operating", "investing", "financing", "net_change") if k in lc},
         "ratios": chi_so,
         "checks": {"passed": sum(1 for c in kiem if c.get("status") == "passed"), "total": len(kiem),
@@ -205,7 +250,11 @@ def tom_tat(s: dict) -> dict:
         "source": {"document_url": pv.get("document_url"), "file_sha256": pv.get("file_sha256"), "pages": pv.get("pages"),
                    "ir_url": pv.get("ir_url"), "detected_at": pv.get("detected_at"), "updated_at": pv.get("updated_at")},
         "notes": "Số tiền đổi sang tỷ đồng, làm tròn 1 chữ số thập phân. Tăng trưởng % để trống khi kỳ so sánh lỗ, bằng 0 hoặc đổi dấu. "
-                 "Biên lợi nhuận chỉ tính cho doanh nghiệp thường. Các chỉ số trong 'ratios' do máy chủ Wealbee MCP tính từ số liệu BCTC.",
+                 "Biên lợi nhuận chỉ tính cho doanh nghiệp thường. Các chỉ số trong 'ratios' do máy chủ Wealbee MCP tính từ số liệu BCTC: "
+                 "ROE = lợi nhuận sau thuế của cổ đông công ty mẹ luỹ kế / bình quân vốn chủ của cổ đông công ty mẹ (đầu năm, cuối kỳ), "
+                 "khi BCTC chưa có vốn chủ công ty mẹ thì dùng lợi nhuận sau thuế / tổng vốn chủ (xem roe_basis); "
+                 "ROA = lợi nhuận sau thuế luỹ kế / bình quân tổng tài sản; '_annualized' nhân 12 / months_ytd. "
+                 "'missing_fields' là chỉ tiêu Data API chưa có cho BCTC này (VD doanh thu của ngân hàng), không phải bằng 0.",
     }
 
 
@@ -227,6 +276,12 @@ async def wealbee_account_info(ctx: Context) -> str:
     """Xem gói Wealbee của khoá đang dùng: sản phẩm được phép, sàn, giới hạn tốc độ, hạn dùng, số request đã dùng trong tháng."""
     d = await _api(ctx, "/me")
     d.pop("key_prefix", None)
+    han = (d.get("entitlements") or {}).get("valid_until")
+    if han:
+        con = (datetime.fromisoformat(han) - datetime.now(VN)).days
+        d["days_left"] = con
+        if con < 14:
+            d["warning"] = f"Khoá Wealbee còn {con} ngày (hết hạn {han[:10]}). Cần gia hạn để các luồng không dừng."
     return _json(d)
 
 
@@ -257,9 +312,9 @@ async def wealbee_statement_summary(ticker: Ma, ctx: Context, period: Ky = None)
     """Tóm tắt một BCTC quý: doanh thu, lợi nhuận, tài sản, nợ, vốn chủ, lưu chuyển tiền (tỷ đồng), tăng trưởng so với cùng kỳ,
     biên lợi nhuận, trạng thái kiểm chứng và link file gốc. Bỏ trống period để lấy kỳ mới nhất.
     Nên dùng tool này trước tiên cho câu hỏi về kết quả kinh doanh."""
-    t = ticker.strip().upper()
+    t, period = ticker.strip().upper(), _chuan_ky(period)
     if period:
-        s = await _api(ctx, f"/statements/{t}.{period.strip().upper()}")
+        s = await _api(ctx, f"/statements/{t}.{period}")
     else:
         s = await _api(ctx, f"/companies/{t}/statements/latest", {"view": "full"})
     return _json(tom_tat(s))
@@ -274,13 +329,14 @@ async def wealbee_compare_companies(
     """Đặt tóm tắt BCTC của nhiều công ty cạnh nhau (tỷ đồng, tăng trưởng, biên, nợ/vốn chủ, trạng thái kiểm chứng).
     Bỏ trống period để lấy kỳ mới nhất của từng công ty. Chỉ để so sánh số liệu, không xếp hạng nên mua."""
     ds = list(dict.fromkeys(t.strip().upper() for t in tickers if t.strip()))[:10]
+    period = _chuan_ky(period)
     if not ds:
         raise ToolError("Cần ít nhất một mã cổ phiếu.")
     async with httpx.AsyncClient(base_url=API, timeout=httpx.Timeout(30.0, connect=10.0)) as http:
         async def mot(t):
             try:
                 if period:
-                    s = await _api(ctx, f"/statements/{t}.{period.strip().upper()}", http=http)
+                    s = await _api(ctx, f"/statements/{t}.{period}", http=http)
                 else:
                     s = await _api(ctx, f"/companies/{t}/statements/latest", {"view": "full"}, http=http)
                 g = tom_tat(s)
@@ -297,6 +353,146 @@ async def wealbee_compare_companies(
         hang = await asyncio.gather(*(mot(t) for t in ds))
     return _json({"unit": "tỷ đồng", "companies": hang,
             "notes": "Tăng trưởng so với cùng kỳ năm trước. Kỳ của từng công ty có thể khác nhau khi không chỉ định period."})
+
+
+def _mot_ban_moi_ky(ds: list[dict]) -> dict[str, dict]:
+    """Mỗi (mã, kỳ) giữ 1 BCTC: ưu tiên hợp nhất, rồi phiên bản mới nhất."""
+    out: dict[str, dict] = {}
+    for s in ds:
+        k = f"{s.get('ticker')}.{s.get('period')}"
+        cu = out.get(k)
+        diem = (s.get("scope") == "consolidated", s.get("version") or 0)
+        if cu is None or diem > (cu.get("scope") == "consolidated", cu.get("version") or 0):
+            out[k] = s
+    return out
+
+
+def _ky_truoc(ky: str, buoc: int) -> str:
+    """2026Q1 lùi 1 quý -> 2025Q4; lùi 4 quý -> 2025Q1."""
+    n = int(ky[:4]) * 4 + int(ky[-1]) - 1 - buoc
+    return f"{n // 4}Q{n % 4 + 1}"
+
+
+@mcp.tool(title="Xu hướng theo quý", annotations=CHI_DOC, structured_output=False)
+async def wealbee_quarterly_trend(ticker: Ma, ctx: Context) -> str:
+    """Chuỗi số liệu theo quý của một công ty (tỷ đồng): doanh thu, lợi nhuận sau thuế của cổ đông công ty mẹ, biên gộp, biên ròng,
+    vốn chủ của cổ đông công ty mẹ; tăng trưởng so với cùng kỳ và so với quý trước. Gồm cả các quý năm trước lấy từ cột
+    "cùng kỳ năm trước" trong BCTC. Dùng để vẽ biểu đồ hoặc trả lời "lợi nhuận đang tăng hay giảm"."""
+    t = ticker.strip().upper()
+    d = await _api(ctx, "/statements", {"ticker": t, "view": "full", "limit": 100})
+    theo_ky = {s["period"]: s for s in _mot_ban_moi_ky(d.get("data") or []).values()}
+    if not theo_ky:
+        raise ToolError(f"Chưa có BCTC nào của {t}.")
+    hang: dict[str, dict] = {}
+
+    def q(s, k, cot="quarter"):
+        return ((s.get("income_statement") or {}).get(k) or {}).get(cot)
+
+    for ky, s in sorted(theo_ky.items()):
+        dt, lg, ln = q(s, "revenue"), q(s, "gross_profit"), q(s, "net_profit_parent")
+        hang[ky] = {"period": ky, "source": "statement", "status": s.get("status"), "revenue": _ty(dt), "net_profit_parent": _ty(ln),
+                    "gross_margin_pct": _ty_le(lg, dt) if s.get("industry_type") == "corporate" else None,
+                    "net_margin_pct": _ty_le(ln, dt) if s.get("industry_type") == "corporate" else None,
+                    "equity_parent_end": _ty(((s.get("balance_sheet") or {}).get("equity_parent") or {}).get("end_of_period")),
+                    "document_url": (s.get("provenance") or {}).get("document_url")}
+        nt = _ky_truoc(ky, 4)
+        if nt not in theo_ky and nt not in hang:
+            dt0, lg0, ln0 = q(s, "revenue", "quarter_prior_year"), q(s, "gross_profit", "quarter_prior_year"), q(s, "net_profit_parent", "quarter_prior_year")
+            hang[nt] = {"period": nt, "source": f"cột cùng kỳ năm trước trong BCTC {ky}", "status": s.get("status"),
+                        "revenue": _ty(dt0), "net_profit_parent": _ty(ln0),
+                        "gross_margin_pct": _ty_le(lg0, dt0) if s.get("industry_type") == "corporate" else None,
+                        "net_margin_pct": _ty_le(ln0, dt0) if s.get("industry_type") == "corporate" else None,
+                        "equity_parent_end": None, "document_url": (s.get("provenance") or {}).get("document_url")}
+    for ky, h in hang.items():
+        for k in ("revenue", "net_profit_parent"):
+            nt, qt = hang.get(_ky_truoc(ky, 4)), hang.get(_ky_truoc(ky, 1))
+            h[f"{k}_yoy_pct"] = _tang(h[k], nt[k]) if nt else None
+            h[f"{k}_qoq_pct"] = _tang(h[k], qt[k]) if qt else None
+    return _json({"ticker": t, "unit": "tỷ đồng", "industry_type": next(iter(theo_ky.values())).get("industry_type"),
+                  "quarters": [hang[k] for k in sorted(hang)],
+                  "notes": "Số riêng từng quý. Quý có source khác 'statement' lấy từ cột cùng kỳ năm trước của BCTC năm sau, "
+                           "có thể đã được điều chỉnh hồi tố. Tăng trưởng để trống khi kỳ so sánh lỗ, bằng 0 hoặc đổi dấu."})
+
+
+def _phan_vi(xs: list[float], p: float) -> float | None:
+    if not xs:
+        return None
+    xs = sorted(xs)
+    i = (len(xs) - 1) * p
+    a, b = int(i), min(int(i) + 1, len(xs) - 1)
+    return round(xs[a] + (xs[b] - xs[a]) * (i - a), 2)
+
+
+CHI_SO_SO_SANH = {
+    "revenue_growth_pct": ("Tăng trưởng doanh thu quý so với cùng kỳ (%)", lambda g: (g["income_statement"].get("revenue") or {}).get("quarter_growth_pct")),
+    "net_profit_parent_growth_pct": ("Tăng trưởng lợi nhuận công ty mẹ quý so với cùng kỳ (%)",
+                                     lambda g: (g["income_statement"].get("net_profit_parent") or {}).get("quarter_growth_pct")),
+    "net_profit_parent_ytd_growth_pct": ("Tăng trưởng lợi nhuận công ty mẹ luỹ kế (%)",
+                                         lambda g: (g["income_statement"].get("net_profit_parent") or {}).get("ytd_growth_pct")),
+    "gross_margin_quarter_pct": ("Biên lợi nhuận gộp quý (%)", lambda g: g["ratios"].get("gross_margin_quarter_pct")),
+    "net_margin_quarter_pct": ("Biên lợi nhuận ròng quý (%)", lambda g: g["ratios"].get("net_margin_quarter_pct")),
+    "roe_annualized_pct": ("ROE quy năm (%)", lambda g: g["ratios"].get("roe_annualized_pct")),
+    "roa_annualized_pct": ("ROA quy năm (%)", lambda g: g["ratios"].get("roa_annualized_pct")),
+    "liabilities_to_equity": ("Nợ phải trả / vốn chủ (lần)", lambda g: g["ratios"].get("liabilities_to_equity")),
+}
+
+
+async def _bctc_ky(ctx: Context | None, ky: str, loai: str, chi_kiem_chung: bool) -> list[dict]:
+    khoa = (ky, loai, chi_kiem_chung)
+    if khoa in _MAU and time.monotonic() - _MAU[khoa][0] < 6 * 3600:
+        return _MAU[khoa][1]
+    ds, con = [], None
+    async with httpx.AsyncClient(base_url=API, timeout=httpx.Timeout(30.0, connect=10.0)) as http:
+        for _ in range(40):                                    # tối đa 4.000 BCTC
+            d = await _api(ctx, "/statements", {"period": ky, "industry_type": loai, "view": "full", "limit": 100, "cursor": con,
+                                                "status": "verified" if chi_kiem_chung else None}, http=http)
+            ds += d.get("data") or []
+            con = d.get("next_cursor")
+            if not con:
+                break
+    ds = list(_mot_ban_moi_ky(ds).values())
+    _MAU[khoa] = (time.monotonic(), ds)
+    return ds
+
+
+@mcp.tool(title="So với trung vị cùng loại hình", annotations=CHI_DOC, structured_output=False)
+async def wealbee_industry_benchmark(
+    ctx: Context,
+    ticker: Annotated[str | None, Field(description="Mã cần đặt cạnh trung vị; bỏ trống thì chỉ trả trung vị của loại hình")] = None,
+    industry_type: Annotated[Literal["corporate", "bank", "securities", "insurance"] | None,
+                             Field(description="Bỏ trống khi có ticker (lấy theo loại hình của mã)")] = None,
+    period: Annotated[str | None, Field(description="Kỳ, VD 2026Q3; bỏ trống = kỳ mới nhất của mã")] = None,
+    verified_only: Annotated[bool, Field(description="Chỉ tính BCTC đã kiểm chứng")] = True,
+) -> str:
+    """Trung vị, tứ phân vị 25% và 75% của các chỉ số (tăng trưởng, biên lợi nhuận, ROE, ROA, nợ/vốn chủ) trên mọi BCTC cùng loại hình
+    và cùng kỳ; nếu có ticker thì đặt số của mã cạnh đó, kèm vị trí phần trăm. Dùng cho câu "so với các doanh nghiệp khác thì sao",
+    thay cho "mức tốt" theo ý kiến. Lần đầu mỗi kỳ có thể mất vài giây (doanh nghiệp thường có khoảng 1.000 BCTC); kết quả được đệm 6 giờ."""
+    period = _chuan_ky(period)
+    rieng = None
+    if ticker:
+        t = ticker.strip().upper()
+        s = await (_api(ctx, f"/statements/{t}.{period}") if period else _api(ctx, f"/companies/{t}/statements/latest", {"view": "full"}))
+        rieng = tom_tat(s)
+        period, industry_type = rieng["period"], rieng["industry_type"]
+    if not period or not industry_type:
+        raise ToolError("Cần ticker, hoặc cả industry_type và period.")
+    ds = [tom_tat(s) for s in await _bctc_ky(ctx, period, industry_type, verified_only)]
+    ket = {}
+    for k, (ten, lay) in CHI_SO_SO_SANH.items():
+        xs = [v for v in (lay(g) for g in ds) if isinstance(v, (int, float))]
+        if len(xs) < 5:
+            continue
+        muc = {"label": ten, "n": len(xs), "p25": _phan_vi(xs, 0.25), "median": _phan_vi(xs, 0.5), "p75": _phan_vi(xs, 0.75)}
+        if rieng is not None and isinstance(lay(rieng), (int, float)):
+            v = lay(rieng)
+            muc.update(company=v, company_percentile=round(sum(1 for x in xs if x <= v) / len(xs) * 100))
+        ket[k] = muc
+    return _json({"period": period, "industry_type": industry_type, "statements": len(ds), "verified_only": verified_only,
+                  **({"ticker": rieng["ticker"], "company_status": rieng["status"]} if rieng else {}), "metrics": ket,
+                  "notes": "Loại hình theo Data API (corporate, bank, securities, insurance); 'corporate' gồm mọi ngành sản xuất, thương mại, "
+                           "dịch vụ nên trung vị chỉ là mốc chung, chưa phải trung vị từng ngành. ROE của mỗi BCTC tính theo roe_basis riêng "
+                           "(vốn chủ công ty mẹ khi có, không thì tổng vốn chủ). company_percentile là phần trăm BCTC có giá trị "
+                           "nhỏ hơn hoặc bằng số của mã, chỉ để định vị số liệu, không phải xếp hạng nên mua."})
 
 
 @mcp.tool(title="BCTC mới nhất (đầy đủ)", annotations=CHI_DOC, structured_output=False)
@@ -322,7 +518,7 @@ async def wealbee_list_statements(
     cursor: Con = None,
 ) -> str:
     """Danh sách BCTC lọc theo mã, kỳ, loại hình, trạng thái, thời điểm cập nhật. Số tiền tính bằng đồng."""
-    return _json(await _api(ctx, "/statements", {"ticker": ticker, "period": period, "industry_type": industry_type, "status": status,
+    return _json(await _api(ctx, "/statements", {"ticker": ticker, "period": _chuan_ky(period), "industry_type": industry_type, "status": status,
                                            "updated_since": updated_since, "as_of": as_of, "view": view,
                                            "limit": _gioi_han(limit), "cursor": cursor}))
 
@@ -334,7 +530,7 @@ async def wealbee_get_statement(
     as_of: Annotated[str | None, Field(description="Phiên bản hiện hành tại thời điểm này (RFC 3339)")] = None,
 ) -> str:
     """Một BCTC theo id, nguyên dạng API (đồng). Dùng as_of để xem số liệu như đã công bố tại một thời điểm."""
-    return _json(await _api(ctx, f"/statements/{statement_id.strip()}", {"as_of": as_of}))
+    return _json(await _api(ctx, f"/statements/{_chuan_id(statement_id)}", {"as_of": as_of}))
 
 
 @mcp.tool(title="Lịch sử phiên bản BCTC", annotations=CHI_DOC, structured_output=False)
@@ -344,7 +540,7 @@ async def wealbee_statement_versions(
     version: Annotated[int | None, Field(description="Số phiên bản cần xem chi tiết; bỏ trống = danh sách mọi phiên bản")] = None,
 ) -> str:
     """Các lần BCTC được cập nhật: lý do, trạng thái, mã băm file gốc, các thay đổi. Truyền version để xem số liệu của một phiên bản."""
-    sid = statement_id.strip()
+    sid = _chuan_id(statement_id)
     if version is not None:
         return _json(await _api(ctx, f"/statements/{sid}/versions/{int(version)}", {"view": "full"}))
     return _json(await _api(ctx, f"/statements/{sid}/versions"))
@@ -361,7 +557,7 @@ async def wealbee_list_filings(
     cursor: Con = None,
 ) -> str:
     """File BCTC gốc mà Wealbee thu thập: link tải, mã băm SHA-256, ngày doanh nghiệp công bố, lúc Wealbee phát hiện, trạng thái xử lý."""
-    return _json(await _api(ctx, "/filings", {"ticker": ticker, "period": period, "status": status, "detected_since": detected_since,
+    return _json(await _api(ctx, "/filings", {"ticker": ticker, "period": _chuan_ky(period), "status": status, "detected_since": detected_since,
                                         "limit": _gioi_han(limit), "cursor": cursor}))
 
 
@@ -372,10 +568,13 @@ async def wealbee_list_news(
     category: Literal["company", "industry", "macro", "market", "commodity", "other"] | None = None,
     published_since: Annotated[str | None, Field(description="Chỉ tin có bài đăng từ thời điểm này (RFC 3339)")] = None,
     updated_since: Annotated[str | None, Field(description="Chỉ tin thay đổi từ thời điểm này (RFC 3339)")] = None,
+    days: Annotated[int | None, Field(description="Chỉ tin trong N ngày gần nhất, tính theo giờ Việt Nam (thay cho published_since)")] = None,
     limit: SoDong = 20,
     cursor: Con = None,
 ) -> str:
     """Tin tổng hợp từ nhiều báo, mới nhất trước. Mỗi tin là một sự kiện gộp nhiều bài: tóm tắt, sắc thái, số nguồn, danh sách bài gốc."""
+    if days and not published_since:
+        published_since = (datetime.now(VN) - timedelta(days=max(1, min(int(days), 365)))).isoformat(timespec="seconds")
     return _json(await _api(ctx, "/news", {"ticker": ticker, "category": category, "published_since": published_since,
                                      "updated_since": updated_since, "limit": _gioi_han(limit), "cursor": cursor}))
 
@@ -465,17 +664,20 @@ def phan_tich_bctc(ticker: str) -> str:
     return (f"Phân tích BCTC quý gần nhất của {ticker.upper()} cho nhà đầu tư cá nhân.\n"
             f"1. Gọi wealbee_statement_summary với ticker={ticker.upper()}.\n"
             "2. Trình bày: doanh thu, lợi nhuận sau thuế của cổ đông công ty mẹ, tăng trưởng so với cùng kỳ (quý và luỹ kế), "
-            "biên lợi nhuận nếu có, nợ phải trả và vay so với vốn chủ, dòng tiền kinh doanh.\n"
-            "3. Nêu các điểm cần đọc kỹ: chỉ tiêu tăng giảm mạnh, dòng tiền kinh doanh âm, phép kiểm không đạt, chỉ tiêu Wealbee tự tính.\n"
-            f"4. Gọi wealbee_list_news với ticker={ticker.upper()}, limit=5 để nêu tin liên quan tới kết quả này, nếu có.\n"
-            "5. Kết thúc bằng phần 'Nguồn' có link file gốc.\n" + QUY_TAC)
+            "biên lợi nhuận nếu có, ROE quy năm (trên vốn chủ của cổ đông công ty mẹ), nợ phải trả và vay so với vốn chủ, dòng tiền kinh doanh.\n"
+            f"3. Gọi wealbee_quarterly_trend với ticker={ticker.upper()} để nói lợi nhuận đang tăng hay giảm qua các quý.\n"
+            f"4. Gọi wealbee_industry_benchmark với ticker={ticker.upper()} và đặt các chỉ số cạnh trung vị cùng loại hình "
+            "(nói rõ đây là mốc chung của loại hình, không phải xếp hạng).\n"
+            "5. Nêu các điểm cần đọc kỹ: chỉ tiêu tăng giảm mạnh, dòng tiền kinh doanh âm, phép kiểm không đạt, chỉ tiêu Wealbee tự tính.\n"
+            f"6. Gọi wealbee_list_news với ticker={ticker.upper()}, days=30, limit=5 để nêu tin liên quan tới kết quả này, nếu có.\n"
+            "7. Kết thúc bằng phần 'Nguồn' có link file gốc.\n" + QUY_TAC)
 
 
 @mcp.prompt(title="Tin nổi bật của một mã")
 def tin_noi_bat(ticker: str, so_ngay: int = 7) -> str:
     """Tóm tắt tin về một mã trong N ngày gần nhất, nêu điểm các báo đưa giống và khác nhau."""
     return (f"Tóm tắt tin về {ticker.upper()} trong {so_ngay} ngày gần nhất.\n"
-            f"1. Gọi wealbee_list_news với ticker={ticker.upper()} và published_since là thời điểm {so_ngay} ngày trước (RFC 3339, giờ Việt Nam).\n"
+            f"1. Gọi wealbee_list_news với ticker={ticker.upper()}, days={so_ngay}.\n"
             "2. Với 3 tin có nhiều nguồn nhất, gọi wealbee_get_news để xem phân tích.\n"
             "3. Với mỗi tin: điều đã xảy ra, số nguồn và nguồn chính thức, các báo nói giống và khác nhau ở đâu.\n"
             "4. Phân biệt sự kiện đã công bố với nhận định của báo. Không suy đoán thêm.\n" + QUY_TAC)
@@ -486,7 +688,7 @@ def so_sanh_doanh_nghiep(danh_sach_ma: str) -> str:
     """Đặt số liệu BCTC của vài doanh nghiệp cạnh nhau và giải thích khác biệt, không xếp hạng nên mua."""
     return (f"So sánh BCTC gần nhất của các mã: {danh_sach_ma}.\n"
             "1. Gọi wealbee_compare_companies với danh sách mã này.\n"
-            "2. Lập bảng: kỳ, doanh thu quý, tăng trưởng, lợi nhuận công ty mẹ, tăng trưởng, biên lợi nhuận, nợ phải trả/vốn chủ, trạng thái.\n"
+            "2. Lập bảng: kỳ, doanh thu quý, tăng trưởng, lợi nhuận công ty mẹ, tăng trưởng, biên lợi nhuận, ROE quy năm, nợ phải trả/vốn chủ, trạng thái.\n"
             "3. Giải thích các khác biệt lớn và lý do có thể (quy mô, mô hình kinh doanh, kỳ khác nhau). Lưu ý khi so doanh nghiệp khác loại hình.\n"
             "4. Không xếp hạng mã nào tốt hơn để mua.\n" + QUY_TAC)
 
@@ -495,7 +697,8 @@ def so_sanh_doanh_nghiep(danh_sach_ma: str) -> str:
 def viet_blog(chu_de: str, loai_bai: str = "giải thích thuật ngữ", tu_khoa_chinh: str = "") -> str:
     """Viết bài blog theo cẩm nang Wealbee, dùng số liệu thật lấy qua các tool."""
     return (f"Viết bài blog Wealbee. Chủ đề: {chu_de}. Loại bài: {loai_bai}. Từ khoá chính: {tu_khoa_chinh or chu_de}.\n"
-            "Lấy số liệu bằng các tool Wealbee (wealbee_statement_summary, wealbee_compare_companies, wealbee_glossary); "
+            "Lấy số liệu bằng các tool Wealbee (wealbee_statement_summary, wealbee_compare_companies, wealbee_quarterly_trend, "
+            "wealbee_industry_benchmark cho trung vị cùng loại hình, wealbee_glossary); "
             "chỉ dùng số tool trả về, thiếu thì ghi [CẦN SỐ LIỆU].\n"
             "Khuôn bài: tiêu đề chứa từ khoá; sapo 2–3 câu trả lời thẳng câu hỏi; bảng 'Nhìn nhanh' nếu có từ 3 chỉ số; "
             "các mục là câu hỏi người đọc gõ vào Google; mỗi chỉ số theo thứ tự định nghĩa, công thức, ví dụ số thật, cách đọc "

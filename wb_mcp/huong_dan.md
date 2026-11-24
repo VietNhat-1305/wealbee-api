@@ -6,7 +6,7 @@ tin tổng hợp từ nhiều báo kèm phân tích, và luồng sự kiện khi
 
 ## Kỳ và phạm vi dữ liệu
 
-- Kỳ viết dạng `2026Q3`, nhãn hiển thị `Q3/2026`. Hiện chỉ có kỳ quý, chưa có kỳ năm.
+- Kỳ viết dạng `2026Q3`, nhãn hiển thị `Q3/2026`. Các tool cũng nhận `Q3/2026`, `quý 3/2026`, `9T/2026`. Hiện chỉ có kỳ quý, chưa có kỳ năm.
 - Mỗi công ty có `coverage.first_period` và `coverage.latest_period`. Chỉ nói về các kỳ trong khoảng này;
   kỳ ngoài khoảng là chưa có dữ liệu, không phải bằng 0.
 - Công ty có `coverage.latest_period = null` là có trong danh bạ nhưng chưa có BCTC.
@@ -20,7 +20,8 @@ tin tổng hợp từ nhiều báo kèm phân tích, và luồng sự kiện khi
 - `balance_sheet`: `end_of_period` là cuối kỳ, `start_of_year` là đầu năm tài chính.
 - Tên trường: `revenue` doanh thu thuần, `cost_of_sales` giá vốn, `gross_profit` lợi nhuận gộp,
   `net_profit` lợi nhuận sau thuế, `net_profit_parent` lợi nhuận sau thuế của cổ đông công ty mẹ,
-  `total_assets` tổng tài sản, `total_liabilities` nợ phải trả, `borrowings` vay, `equity` vốn chủ sở hữu,
+  `total_assets` tổng tài sản, `total_liabilities` nợ phải trả, `borrowings` vay, `equity` vốn chủ sở hữu (gồm cả lợi ích
+  cổ đông không kiểm soát), `equity_parent` vốn chủ của cổ đông công ty mẹ, `non_controlling_interest` lợi ích cổ đông không kiểm soát,
   `operating` / `investing` / `financing` lưu chuyển tiền từ hoạt động kinh doanh / đầu tư / tài chính,
   `net_change` lưu chuyển tiền thuần trong kỳ.
 - `industry_type`: `corporate` (doanh nghiệp thường), `bank`, `securities`, `insurance`. Ngân hàng, chứng khoán,
@@ -38,6 +39,17 @@ tin tổng hợp từ nhiều báo kèm phân tích, và luồng sự kiện khi
   trong quá khứ bằng tham số `as_of`.
 - `provenance`: nguồn gốc số liệu. `document_url` là file PDF gốc, `file_sha256` là mã băm của file,
   `pages` là trang chứa từng bảng, `detected_at` là lúc Wealbee phát hiện file, `ir_url` là trang quan hệ cổ đông.
+
+## Chỉ số do Wealbee MCP tính
+
+- `roe_ytd_pct`, `roe_annualized_pct`: lợi nhuận sau thuế của cổ đông công ty mẹ luỹ kế chia bình quân vốn chủ của cổ đông công ty mẹ
+  (đầu năm và cuối kỳ); bản quy năm nhân 12 / `months_ytd`. Khi BCTC chưa có `equity_parent` thì tính lợi nhuận sau thuế / tổng vốn chủ (`roe_basis` ghi rõ cách tính).
+- `roa_ytd_pct`, `roa_annualized_pct`: lợi nhuận sau thuế luỹ kế chia bình quân tổng tài sản.
+- Bình quân hai thời điểm chỉ xấp xỉ số dư bình quân trong kỳ; khi viết bài, ghi rõ cách tính.
+- `missing_fields`: chỉ tiêu Data API chưa có cho BCTC đó (VD doanh thu của ngân hàng), không phải bằng 0.
+- `wealbee_industry_benchmark`: trung vị và tứ phân vị theo loại hình (corporate, bank, securities, insurance) cùng kỳ.
+  `corporate` gồm mọi ngành, nên đây là mốc chung, chưa phải trung vị từng ngành. Dùng để đặt số cạnh mốc, không để xếp hạng nên mua.
+- `wealbee_quarterly_trend`: số riêng từng quý; các quý năm trước lấy từ cột cùng kỳ của BCTC năm sau, có thể đã điều chỉnh hồi tố.
 
 ## Tin và sự kiện
 
