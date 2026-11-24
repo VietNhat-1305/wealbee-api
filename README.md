@@ -62,22 +62,25 @@ Máy chủ [Model Context Protocol](https://modelcontextprotocol.io) đưa Wealb
 
 | Tool | Việc |
 |---|---|
-| `wealbee_statement_summary` | Tóm tắt một BCTC: doanh thu, lợi nhuận, tài sản, nợ, vốn chủ, lưu chuyển tiền (tỷ đồng), tăng trưởng so với cùng kỳ, biên lợi nhuận, trạng thái kiểm chứng, link file gốc |
+| `wealbee_statement_summary` | Tóm tắt một BCTC: doanh thu, lợi nhuận, tài sản, nợ, vốn chủ (cả vốn chủ công ty mẹ khi có), lưu chuyển tiền (tỷ đồng), tăng trưởng so với cùng kỳ, biên lợi nhuận, ROE và ROA quy năm kèm cách tính, trạng thái kiểm chứng, link file gốc |
+| `wealbee_quarterly_trend` | Chuỗi theo quý của một mã: doanh thu, lợi nhuận công ty mẹ, biên lợi nhuận, tăng trưởng so với cùng kỳ và quý trước; gồm cả các quý năm trước lấy từ cột cùng kỳ |
+| `wealbee_industry_benchmark` | Trung vị và tứ phân vị của tăng trưởng, biên lợi nhuận, ROE, ROA, nợ/vốn chủ theo loại hình và kỳ; đặt số của một mã cạnh đó |
 | `wealbee_compare_companies` | Đặt tóm tắt BCTC của 2–10 mã cạnh nhau |
 | `wealbee_search_companies`, `wealbee_get_company` | Tìm công ty; xem khoảng kỳ BCTC đang có |
 | `wealbee_get_latest_statement`, `wealbee_list_statements`, `wealbee_get_statement`, `wealbee_statement_versions` | BCTC nguyên dạng API, lọc theo mã, kỳ, trạng thái; xem tại thời điểm (`as_of`) và lịch sử phiên bản |
 | `wealbee_list_filings` | File BCTC gốc: link, SHA-256, ngày công bố |
-| `wealbee_list_news`, `wealbee_get_news` | Tin tổng hợp nhiều báo và phân tích của Wealbee |
+| `wealbee_list_news`, `wealbee_get_news` | Tin tổng hợp nhiều báo và phân tích của Wealbee; lọc theo số ngày (`days`) |
 | `wealbee_list_events` | Thay đổi dữ liệu (BCTC mới, được sửa, tin mới) |
 | `wealbee_glossary` | Tra từ điển 490 thuật ngữ (không cần khoá) |
-| `wealbee_account_info` | Gói, hạn mức, số request đã dùng |
+| `wealbee_account_info` | Gói, hạn mức, số request đã dùng, số ngày còn lại của khoá (cảnh báo khi dưới 14 ngày) |
 
-Thêm 2 resource (`wealbee://huong-dan` giải thích các trường và quy tắc trả lời, `wealbee://tu-dien`) và 4 prompt dựng sẵn: phân tích BCTC, tin nổi bật, so sánh doanh nghiệp, viết blog Wealbee. Hướng dẫn cho AI nằm sẵn trong máy chủ: không khuyến nghị mua bán, luôn dẫn file gốc, nói rõ khi BCTC đang `needs_review`.
+Kỳ nhận nhiều cách viết: `2026Q3`, `Q3/2026`, `quý 3/2026`, `9T/2026`. Thêm 2 resource (`wealbee://huong-dan` giải thích các trường, chỉ số và quy tắc trả lời, `wealbee://tu-dien`) và 4 prompt dựng sẵn: phân tích BCTC, tin nổi bật, so sánh doanh nghiệp, viết blog Wealbee. Hướng dẫn cho AI nằm sẵn trong máy chủ: không khuyến nghị mua bán, luôn dẫn file gốc, nói rõ khi BCTC đang `needs_review`.
 
 Cài: `pip install -r wb_mcp/requirements.txt` (thư viện `mcp` 2.x, Python ≥ 3.10).
 
 **Dùng trên máy** (khoá đọc từ `.env`: `WEALBEE_API_KEY`, nếu không có thì `WEALBEE_KEY_DN`; khoá không nằm trong cấu hình Claude):
-- Claude Code: `claude mcp add wealbee -- python C:\Users\Admin\wealbee-api\wb_mcp\server.py`
+- Claude Code trên macOS: `claude mcp add --scope user wealbee -- python3 ~/wealbee-api/wb_mcp/server.py` (dùng Python ≥ 3.10, VD `/opt/homebrew/bin/python3.12`)
+- Claude Code trên Windows: `claude mcp add wealbee -- python C:\Users\Admin\wealbee-api\wb_mcp\server.py`
 - Claude Desktop: thêm vào `claude_desktop_config.json`
   ```json
   {"mcpServers": {"wealbee": {"command": "python", "args": ["C:\\Users\\Admin\\wealbee-api\\wb_mcp\\server.py"]}}}
