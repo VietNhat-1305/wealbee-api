@@ -215,16 +215,21 @@ def tom_tat(s: dict) -> dict:
 
     thang = s.get("months_ytd") or 0
     von_me = cd.get("equity_parent") if (cd.get("equity_parent") or {}).get("end_of_period") is not None else None
-    roe_ytd = (_ty_le((kq.get("net_profit_parent") or {}).get("ytd"), bq(von_me)) if von_me
-               else _ty_le((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("equity"))))
-    roa_ytd = _ty_le((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("total_assets")))
+    def tho(tu, mau):   # tỷ lệ % chưa làm tròn: quy năm từ số này, tránh làm tròn hai lần (21,78% thành 21,7%)
+        return None if tu is None or not mau else tu / mau * 100
+
+    roe_tho = (tho((kq.get("net_profit_parent") or {}).get("ytd"), bq(von_me)) if von_me
+               else tho((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("equity"))))
+    roa_tho = tho((kq.get("net_profit") or {}).get("ytd"), bq(cd.get("total_assets")))
+    roe_ytd = None if roe_tho is None else round(roe_tho, 1)
+    roa_ytd = None if roa_tho is None else round(roa_tho, 1)
     von = (cd.get("equity") or {}).get("end_of_period")
     no, vay = (cd.get("total_liabilities") or {}).get("end_of_period"), (cd.get("borrowings") or {}).get("end_of_period")
     chi_so = {"liabilities_to_equity": None if not von or no is None else round(no / von, 2),
               "borrowings_to_equity": None if not von or vay is None else round(vay / von, 2),
-              "roe_ytd_pct": roe_ytd, "roe_annualized_pct": None if roe_ytd is None or not thang else round(roe_ytd * 12 / thang, 1),
+              "roe_ytd_pct": roe_ytd, "roe_annualized_pct": None if roe_tho is None or not thang else round(roe_tho * 12 / thang, 1),
               "roe_basis": "net_profit_parent / equity_parent" if von_me else "net_profit / equity (chưa có vốn chủ công ty mẹ)",
-              "roa_ytd_pct": roa_ytd, "roa_annualized_pct": None if roa_ytd is None or not thang else round(roa_ytd * 12 / thang, 1)}
+              "roa_ytd_pct": roa_ytd, "roa_annualized_pct": None if roa_tho is None or not thang else round(roa_tho * 12 / thang, 1)}
     if s.get("industry_type") == "corporate":
         dt = (kq.get("revenue") or {}).get("quarter")
         chi_so["gross_margin_quarter_pct"] = _ty_le((kq.get("gross_profit") or {}).get("quarter"), dt)
